@@ -1,10 +1,14 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { AsaasGateway } from './gateways/asaas.gateway'
+import { MercadoPagoGateway } from './gateways/mercadopago.gateway'
 import { PaymentsRepository } from './payments.repository'
 import { CustomersService } from '../customers/customers.service'
 import { PlansService } from '../plans/plans.service'
 import { ProductsService } from '../products/products.service'
+import { SettingsService } from '../settings/settings.service'
 import dayjs from 'dayjs'
+import { randomUUID } from 'crypto'
 
 export interface CreateCheckoutParams {
   customerId: string
@@ -26,7 +30,10 @@ export class CheckoutService {
   private readonly logger = new Logger(CheckoutService.name)
 
   constructor(
+    private readonly config: ConfigService,
+    private readonly settingsService: SettingsService,
     private readonly asaas: AsaasGateway,
+    private readonly mp: MercadoPagoGateway,
     private readonly repo: PaymentsRepository,
     private readonly customers: CustomersService,
     private readonly plans: PlansService,
@@ -35,42 +42,134 @@ export class CheckoutService {
 
   async createCheckout(params: CreateCheckoutParams) {
     const customer = await this.customers.findById(params.customerId)
-    const plan = await this.plans.findById(params.planId)
-    const product = await this.products.findById(params.productId)
+    const plan     = await this.plans.findById(params.planId)
+    const product  = await this.products.findById(params.productId)
 
     if (plan.status !== 'active') {
       throw new BadRequestException('Plano não está disponível para contratação')
     }
 
-    // 1. Garante que o cliente existe no Asaas
-    const asaasCustomer = await this.asaas.createOrFindCustomer({
-      name: customer.legalName,
-      cpfCnpj: customer.documentClean,
-      email: customer.email,
-      phone: customer.phone ?? undefined,
+    // Resolve gateway ativo (DB > env)
+    const gwConfig = await this.settingsService.getGatewayConfig()
+    const activeGateway = gwConfig.activeGateway
+
+    this.logger.log(`Checkout via gateway: ${activeGateway}`)
+
+    if (activeGateway === 'mock') {
+      return this.createMockCheckout(params, plan, product)
+    }
+
+    if (activeGateway === 'mercadopago') {
+      return this.createMercadoPagoCheckout(params, plan, product, customer, gwConfig)
+    }
+
+    // Fallback: Asaas
+    return this.createAsaasCheckout(params, plan, product, customer)
+  }
+
+  // ── MercadoPago ─────────────────────────────────────────────────────────────
+
+  private async createMercadoPagoCheckout(
+    params: CreateCheckoutParams,
+    plan: any,
+    product: any,
+    customer: any,
+    gwConfig: Awaited<ReturnType<SettingsService['getGatewayConfig']>>,
+  ) {
+    if (!gwConfig.mercadopago.isConfigured) {
+      throw new BadRequestException(
+        'Credenciais do Mercado Pago não configuradas. Acesse Configurações → Gateway.',
+      )
+    }
+
+    // Inicializa cliente com credenciais do banco
+    this.mp.setCredentials(gwConfig.mercadopago.accessToken, gwConfig.mercadopago.webhookSecret)
+
+    const description = `${product.name} — ${plan.name}`
+    const dueDate     = params.dueDate ?? dayjs().add(3, 'day').format('YYYY-MM-DD')
+
+    const charge = await this.mp.createCharge({
+      email:             customer.email,
+      cpfCnpj:          customer.documentClean ?? customer.document,
+      name:             customer.legalName ?? customer.name,
+      amount:           plan.amount,          // em centavos
+      description,
+      billingType:      params.billingType as any,
+      externalReference: `${params.originType}:${params.originId}`,
+      installments:     params.installmentCount,
+      boletoDueDate:    params.billingType === 'BOLETO' ? dueDate : undefined,
     })
 
-    const dueDate = params.dueDate ?? dayjs().add(3, 'day').format('YYYY-MM-DD')
+    const pixData   = params.billingType === 'PIX'    ? this.mp.extractPixData(charge)   : null
+    const boletoUrl = params.billingType === 'BOLETO' ? this.mp.extractBoletoUrl(charge) : null
+
+    const invoice     = await this.repo.findInvoiceByOrigin(params.originType, params.originId)
+    const localCharge = await this.repo.createCharge({
+      invoiceId:        invoice.id,
+      customerId:       params.customerId,
+      amount:           plan.amount,
+      currency:         plan.currency ?? 'BRL',
+      paymentMethod:    params.billingType.toLowerCase() as any,
+      gatewayName:      'mercadopago',
+      externalChargeId: String(charge.id),
+      checkoutUrl:      boletoUrl ?? `https://mercadopago.com.br/checkout/${charge.id}`,
+      pixQrCode:        pixData?.qrCodeBase64,
+      pixExpiresAt:     params.billingType === 'PIX' ? dayjs().add(24, 'hour').toDate() : undefined,
+      boletoUrl:        boletoUrl ?? undefined,
+      installmentCount: params.installmentCount ?? 1,
+      attemptNumber:    1,
+      maxAttempts:      3,
+    })
+
+    this.logger.log(`Checkout MP criado: charge ${localCharge.id} → MP ${charge.id}`)
+
+    return {
+      chargeId:         localCharge.id,
+      externalChargeId: String(charge.id),
+      checkoutUrl:      boletoUrl ?? null,
+      pixQrCode:        pixData?.qrCodeBase64 ?? null,
+      pixPayload:       pixData?.qrCode ?? null,
+      boletoUrl:        boletoUrl ?? null,
+      amount:           plan.amount,
+      currency:         plan.currency ?? 'BRL',
+      dueDate,
+    }
+  }
+
+  // ── Asaas ────────────────────────────────────────────────────────────────────
+
+  private async createAsaasCheckout(
+    params: CreateCheckoutParams,
+    plan: any,
+    product: any,
+    customer: any,
+  ) {
+    const asaasCustomer = await this.asaas.createOrFindCustomer({
+      name:     customer.legalName,
+      cpfCnpj: customer.documentClean,
+      email:   customer.email,
+      phone:   customer.phone ?? undefined,
+    })
+
+    const dueDate     = params.dueDate ?? dayjs().add(3, 'day').format('YYYY-MM-DD')
     const description = `${product.name} — ${plan.name}`
 
-    // 2. Cria a cobrança no gateway
     const charge = await this.asaas.createCharge({
       externalCustomerId: asaasCustomer.id,
-      value: plan.amount,
+      value:         plan.amount,
       dueDate,
       description,
-      billingType: params.billingType,
+      billingType:   params.billingType,
       externalReference: `${params.originType}:${params.originId}`,
       installmentCount: params.installmentCount,
       installmentValue: params.installmentCount
         ? Math.ceil(plan.amount / params.installmentCount)
         : undefined,
-      creditCard: params.creditCard,
+      creditCard:           params.creditCard,
       creditCardHolderInfo: params.creditCardHolderInfo,
-      remoteIp: params.remoteIp,
+      remoteIp:             params.remoteIp,
     })
 
-    // 3. Busca o QR Code Pix se necessário
     let pixQrCode: string | undefined
     let pixPayload: string | undefined
     if (params.billingType === 'PIX') {
@@ -79,44 +178,90 @@ export class CheckoutService {
       pixPayload = pix.payload
     }
 
-    // 4. Persiste o charge localmente (invoice já deve existir)
-    const invoice = await this.repo.findInvoiceByOrigin(params.originType, params.originId)
-
+    const invoice     = await this.repo.findInvoiceByOrigin(params.originType, params.originId)
     const localCharge = await this.repo.createCharge({
-      invoiceId: invoice.id,
-      customerId: params.customerId,
-      amount: plan.amount,
-      currency: plan.currency,
-      paymentMethod: params.billingType.toLowerCase() as any,
-      gatewayName: 'asaas',
+      invoiceId:        invoice.id,
+      customerId:       params.customerId,
+      amount:           plan.amount,
+      currency:         plan.currency,
+      paymentMethod:    params.billingType.toLowerCase() as any,
+      gatewayName:      'asaas',
       externalChargeId: charge.id,
-      checkoutUrl: charge.invoiceUrl,
+      checkoutUrl:      charge.invoiceUrl,
       pixQrCode,
-      pixExpiresAt: params.billingType === 'PIX'
+      pixExpiresAt:     params.billingType === 'PIX'
         ? dayjs().add(24, 'hour').toDate()
         : undefined,
-      boletoUrl: charge.bankSlipUrl,
+      boletoUrl:        charge.bankSlipUrl,
       installmentCount: params.installmentCount ?? 1,
-      attemptNumber: 1,
-      maxAttempts: 3,
+      attemptNumber:    1,
+      maxAttempts:      3,
     })
 
-    this.logger.log(`Checkout criado: charge ${localCharge.id} → Asaas ${charge.id}`)
+    this.logger.log(`Checkout Asaas criado: charge ${localCharge.id} → Asaas ${charge.id}`)
 
     return {
-      chargeId: localCharge.id,
+      chargeId:         localCharge.id,
       externalChargeId: charge.id,
-      checkoutUrl: charge.invoiceUrl,
-      pixQrCode: pixQrCode ?? null,
-      pixPayload: pixPayload ?? null,
-      boletoUrl: charge.bankSlipUrl ?? null,
-      amount: plan.amount,
-      currency: plan.currency,
+      checkoutUrl:      charge.invoiceUrl,
+      pixQrCode:        pixQrCode ?? null,
+      pixPayload:       pixPayload ?? null,
+      boletoUrl:        charge.bankSlipUrl ?? null,
+      amount:           plan.amount,
+      currency:         plan.currency,
       dueDate,
     }
   }
 
-  // Cria assinatura recorrente diretamente no gateway
+  // ── Mock ─────────────────────────────────────────────────────────────────────
+
+  private async createMockCheckout(params: CreateCheckoutParams, plan: any, _product: any) {
+    const dueDate      = params.dueDate ?? dayjs().add(3, 'day').format('YYYY-MM-DD')
+    const fakeChargeId = `mock_${randomUUID()}`
+    const checkoutUrl  = `https://checkout.exemplo.com/pay/${fakeChargeId}`
+
+    const pixQrCodeBase64 = params.billingType === 'PIX'
+      ? 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+      : undefined
+    const pixPayload = params.billingType === 'PIX'
+      ? `00020126580014BR.GOV.BCB.PIX0136${randomUUID()}5204000053039865406${(plan.amount / 100).toFixed(2)}5802BR5913Mock Payment6008Brasilia62070503***6304MOCK`
+      : undefined
+
+    const invoice     = await this.repo.findInvoiceByOrigin(params.originType, params.originId)
+    const localCharge = await this.repo.createCharge({
+      invoiceId:        invoice.id,
+      customerId:       params.customerId,
+      amount:           plan.amount,
+      currency:         plan.currency ?? 'BRL',
+      paymentMethod:    params.billingType.toLowerCase() as any,
+      gatewayName:      'mock',
+      externalChargeId: fakeChargeId,
+      checkoutUrl,
+      pixQrCode:        pixQrCodeBase64,
+      pixExpiresAt:     params.billingType === 'PIX' ? dayjs().add(24, 'hour').toDate() : undefined,
+      boletoUrl:        params.billingType === 'BOLETO' ? checkoutUrl : undefined,
+      installmentCount: params.installmentCount ?? 1,
+      attemptNumber:    1,
+      maxAttempts:      3,
+    })
+
+    this.logger.log(`[MOCK] Checkout simulado: charge ${localCharge.id}`)
+
+    return {
+      chargeId:         localCharge.id,
+      externalChargeId: fakeChargeId,
+      checkoutUrl,
+      pixQrCode:        pixQrCodeBase64 ?? null,
+      pixPayload:       pixPayload ?? null,
+      boletoUrl:        params.billingType === 'BOLETO' ? checkoutUrl : null,
+      amount:           plan.amount,
+      currency:         plan.currency ?? 'BRL',
+      dueDate,
+    }
+  }
+
+  // ── Assinatura recorrente ─────────────────────────────────────────────────────
+
   async createRecurringSubscription(params: {
     customerId: string
     productId: string
@@ -125,13 +270,40 @@ export class CheckoutService {
     billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO'
   }) {
     const customer = await this.customers.findById(params.customerId)
-    const plan = await this.plans.findById(params.planId)
-    const product = await this.products.findById(params.productId)
+    const plan     = await this.plans.findById(params.planId)
+    const product  = await this.products.findById(params.productId)
 
+    const gwConfig      = await this.settingsService.getGatewayConfig()
+    const activeGateway = gwConfig.activeGateway
+
+    if (activeGateway === 'mercadopago') {
+      if (!gwConfig.mercadopago.isConfigured) {
+        throw new BadRequestException('Credenciais do Mercado Pago não configuradas.')
+      }
+      this.mp.setCredentials(gwConfig.mercadopago.accessToken, gwConfig.mercadopago.webhookSecret)
+
+      const sub = await this.mp.createSubscription({
+        email:          customer.email,
+        name:           customer.legalName,
+        amount:         plan.amount,
+        intervalUnit:   plan.intervalUnit as any,
+        intervalCount:  plan.intervalCount,
+        description:    `${product.name} — ${plan.name}`,
+        externalReference: `subscription:${params.subscriptionId}`,
+      })
+
+      return {
+        externalSubscriptionId: sub.id,
+        initPoint: sub.init_point,
+        nextDueDate: null,
+      }
+    }
+
+    // Asaas
     const asaasCustomer = await this.asaas.createOrFindCustomer({
-      name: customer.legalName,
+      name:     customer.legalName,
       cpfCnpj: customer.documentClean,
-      email: customer.email,
+      email:   customer.email,
     })
 
     const cycle = AsaasGateway.intervalToCycle(plan.intervalUnit, plan.intervalCount)
@@ -139,7 +311,7 @@ export class CheckoutService {
     const sub = await this.asaas.createSubscription({
       externalCustomerId: asaasCustomer.id,
       billingType: params.billingType,
-      value: plan.amount,
+      value:       plan.amount,
       nextDueDate: dayjs().add(1, 'day').format('YYYY-MM-DD'),
       cycle,
       description: `${product.name} — ${plan.name}`,

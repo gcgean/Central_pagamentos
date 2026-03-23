@@ -43,7 +43,22 @@ export default function NewCustomerPage() {
   })
 
   const mutation = useMutation({
-    mutationFn: (data: FormData) => api.post('/customers', data),
+    mutationFn: (data: FormData) => api.post('/customers', {
+      personType:      data.personType,
+      document:        data.document,
+      legalName:       data.name,
+      tradeName:       data.tradeName || undefined,
+      email:           data.email,
+      phone:           data.phone || undefined,
+      addressZip:      data.zipCode || undefined,
+      addressStreet:   data.street || undefined,
+      addressNumber:   data.number || undefined,
+      addressComp:     data.complement || undefined,
+      addressDistrict: data.neighborhood || undefined,
+      addressCity:     data.city || undefined,
+      addressState:    data.state || undefined,
+      notes:           data.notes || undefined,
+    }),
     onSuccess: (res) => {
       router.push(`/customers/${res.data.id}`)
     },

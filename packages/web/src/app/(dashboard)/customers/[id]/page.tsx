@@ -14,31 +14,31 @@ import { ArrowLeft, ShieldCheck, Zap, UserCheck, UserX, Edit } from 'lucide-reac
 interface Customer {
   id: string
   personType: 'PF' | 'PJ'
-  name: string
+  legalName: string
   tradeName?: string
   document: string
+  documentClean?: string
   email: string
   phone?: string
-  status: 'ACTIVE' | 'INACTIVE' | 'BLOCKED'
-  createdAt: string
-  address?: {
-    zipCode?: string
-    street?: string
-    number?: string
-    complement?: string
-    neighborhood?: string
-    city?: string
-    state?: string
-  }
+  status: string
+  addressZip?: string
+  addressStreet?: string
+  addressNumber?: string
+  addressComp?: string
+  addressDistrict?: string
+  addressCity?: string
+  addressState?: string
   notes?: string
+  createdAt: string
+  updatedAt?: string
 }
 
 interface Subscription {
   id: string
   status: string
-  productName: string
-  planName: string
-  amount: number
+  product?: { name: string; code: string }
+  plan?: { name: string; amount: number }
+  contractedAmount?: number
   currentPeriodStart?: string
   currentPeriodEnd?: string
 }
@@ -53,19 +53,20 @@ interface License {
 }
 
 const statusColors: Record<string, 'green' | 'gray' | 'red' | 'yellow'> = {
-  ACTIVE: 'green',
-  INACTIVE: 'gray',
-  BLOCKED: 'red',
-  SUSPENDED: 'yellow',
+  // customer statuses (lowercase from DB)
+  active: 'green', inactive: 'gray', blocked: 'red', suspended: 'yellow',
+  // subscription statuses
+  pending: 'yellow', canceled: 'red', trialing: 'green', overdue: 'yellow',
+  // uppercase legacy
+  ACTIVE: 'green', INACTIVE: 'gray', BLOCKED: 'red', SUSPENDED: 'yellow',
+  CANCELLED: 'red', PENDING: 'yellow',
 }
 
 const statusLabels: Record<string, string> = {
-  ACTIVE: 'Ativo',
-  INACTIVE: 'Inativo',
-  BLOCKED: 'Bloqueado',
-  SUSPENDED: 'Suspenso',
-  CANCELLED: 'Cancelado',
-  PENDING: 'Pendente',
+  active: 'Ativo', inactive: 'Inativo', blocked: 'Bloqueado', suspended: 'Suspenso',
+  pending: 'Pendente', canceled: 'Cancelado', trialing: 'Trial', overdue: 'Vencido',
+  ACTIVE: 'Ativo', INACTIVE: 'Inativo', BLOCKED: 'Bloqueado', SUSPENDED: 'Suspenso',
+  CANCELLED: 'Cancelado', PENDING: 'Pendente',
 }
 
 export default function CustomerDetailPage() {
@@ -128,7 +129,7 @@ export default function CustomerDetailPage() {
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold text-gray-900">{customer.name}</h2>
+            <h2 className="text-xl font-semibold text-gray-900">{customer.legalName}</h2>
             <Badge variant={statusColors[customer.status] ?? 'gray'}>
               {statusLabels[customer.status] ?? customer.status}
             </Badge>
@@ -139,7 +140,7 @@ export default function CustomerDetailPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {customer.status !== 'ACTIVE' && (
+          {customer.status !== 'active' && customer.status !== 'ACTIVE' && (
             <Button
               variant="secondary"
               size="sm"
@@ -149,7 +150,7 @@ export default function CustomerDetailPage() {
               <UserCheck size={14} /> Ativar
             </Button>
           )}
-          {customer.status === 'ACTIVE' && (
+          {(customer.status === 'active' || customer.status === 'ACTIVE') && (
             <Button
               variant="danger"
               size="sm"
@@ -178,7 +179,7 @@ export default function CustomerDetailPage() {
             <h3 className="text-sm font-semibold text-gray-900">Dados Pessoais</h3>
           </CardHeader>
           <CardBody className="space-y-3">
-            <InfoRow label="Nome" value={customer.name} />
+            <InfoRow label="Nome" value={customer.legalName} />
             {customer.tradeName && <InfoRow label="Nome Fantasia" value={customer.tradeName} />}
             <InfoRow label="Documento" value={customer.document ? formatDocument(customer.document) : '—'} />
             <InfoRow label="E-mail" value={customer.email} />
@@ -193,13 +194,13 @@ export default function CustomerDetailPage() {
             <h3 className="text-sm font-semibold text-gray-900">Endereço</h3>
           </CardHeader>
           <CardBody className="space-y-3">
-            {customer.address ? (
+            {customer.addressStreet || customer.addressCity ? (
               <>
-                <InfoRow label="CEP" value={customer.address.zipCode ?? '—'} />
-                <InfoRow label="Logradouro" value={`${customer.address.street ?? '—'}, ${customer.address.number ?? '—'}`} />
-                {customer.address.complement && <InfoRow label="Complemento" value={customer.address.complement} />}
-                <InfoRow label="Bairro" value={customer.address.neighborhood ?? '—'} />
-                <InfoRow label="Cidade" value={`${customer.address.city ?? '—'} - ${customer.address.state ?? '—'}`} />
+                {customer.addressZip && <InfoRow label="CEP" value={customer.addressZip} />}
+                <InfoRow label="Logradouro" value={`${customer.addressStreet ?? '—'}, ${customer.addressNumber ?? '—'}`} />
+                {customer.addressComp && <InfoRow label="Complemento" value={customer.addressComp} />}
+                {customer.addressDistrict && <InfoRow label="Bairro" value={customer.addressDistrict} />}
+                <InfoRow label="Cidade" value={`${customer.addressCity ?? '—'} - ${customer.addressState ?? '—'}`} />
               </>
             ) : (
               <p className="text-sm text-gray-400">Endereço não informado</p>
@@ -261,9 +262,9 @@ export default function CustomerDetailPage() {
                   <tbody className="divide-y divide-gray-50">
                     {subscriptions.map((sub) => (
                       <tr key={sub.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-3 text-sm font-medium text-gray-900">{sub.productName}</td>
-                        <td className="px-6 py-3 text-sm text-gray-600">{sub.planName}</td>
-                        <td className="px-6 py-3 text-sm text-gray-600">{formatCurrency(sub.amount)}</td>
+                        <td className="px-6 py-3 text-sm font-medium text-gray-900">{sub.product?.name ?? '—'}</td>
+                        <td className="px-6 py-3 text-sm text-gray-600">{sub.plan?.name ?? '—'}</td>
+                        <td className="px-6 py-3 text-sm text-gray-600">{formatCurrency(sub.contractedAmount ?? sub.plan?.amount ?? 0)}</td>
                         <td className="px-6 py-3">
                           <Badge variant={statusColors[sub.status] ?? 'gray'}>
                             {statusLabels[sub.status] ?? sub.status}

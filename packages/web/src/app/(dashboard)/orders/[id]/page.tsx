@@ -21,13 +21,15 @@ interface Order {
   id: string
   status: string
   customerId: string
-  customerName?: string
-  customerEmail?: string
-  totalAmount: number
+  customer?: { name: string; email: string }
+  product?: { name: string; code: string }
+  plan?: { name: string } | null
+  contractedAmount: number
+  contractedCurrency?: string
   description?: string
   createdAt: string
   paidAt?: string
-  cancelledAt?: string
+  canceledAt?: string
   items?: { id: string; description: string; quantity: number; unitPrice: number; total: number }[]
 }
 
@@ -38,19 +40,24 @@ const checkoutSchema = z.object({
 type CheckoutFormData = z.infer<typeof checkoutSchema>
 
 const statusColors: Record<string, 'green' | 'gray' | 'red' | 'yellow' | 'orange'> = {
-  PAID: 'green',
-  PENDING: 'yellow',
-  CANCELLED: 'red',
-  OVERDUE: 'orange',
-  REFUNDED: 'gray',
+  paid:             'green',
+  pending_payment:  'yellow',
+  draft:            'gray',
+  canceled:         'red',
+  overdue:          'orange',
+  refunded:         'gray',
+  // legacy uppercase
+  PAID: 'green', PENDING: 'yellow', CANCELLED: 'red', OVERDUE: 'orange', REFUNDED: 'gray',
 }
 
 const statusLabels: Record<string, string> = {
-  PAID: 'Pago',
-  PENDING: 'Pendente',
-  CANCELLED: 'Cancelado',
-  OVERDUE: 'Vencido',
-  REFUNDED: 'Reembolsado',
+  paid:             'Pago',
+  pending_payment:  'Aguardando Pagamento',
+  draft:            'Rascunho',
+  canceled:         'Cancelado',
+  overdue:          'Vencido',
+  refunded:         'Reembolsado',
+  PAID: 'Pago', PENDING: 'Pendente', CANCELLED: 'Cancelado', OVERDUE: 'Vencido', REFUNDED: 'Reembolsado',
 }
 
 export default function OrderDetailPage() {
@@ -98,8 +105,8 @@ export default function OrderDetailPage() {
   if (isLoading) return <Spinner />
   if (!order) return <div className="text-gray-500 text-sm">Pedido não encontrado.</div>
 
-  const canCheckout = ['PENDING'].includes(order.status)
-  const canCancel = !['CANCELLED', 'REFUNDED'].includes(order.status)
+  const canCheckout = ['PENDING', 'pending_payment', 'pending'].includes(order.status)
+  const canCancel = !['CANCELLED', 'REFUNDED', 'canceled', 'refunded'].includes(order.status)
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -143,11 +150,13 @@ export default function OrderDetailPage() {
           <CardHeader><h3 className="text-sm font-semibold text-gray-900">Informações do Pedido</h3></CardHeader>
           <CardBody className="space-y-3">
             <InfoRow label="ID" value={order.id} />
-            <InfoRow label="Valor Total" value={formatCurrency(order.totalAmount)} />
+            <InfoRow label="Valor Total" value={formatCurrency(order.contractedAmount)} />
             {order.description && <InfoRow label="Descrição" value={order.description} />}
+            {order.product?.name && <InfoRow label="Produto" value={order.product.name} />}
+            {order.plan?.name && <InfoRow label="Plano" value={order.plan.name} />}
             <InfoRow label="Criado em" value={formatDateTime(order.createdAt)} />
             {order.paidAt && <InfoRow label="Pago em" value={formatDateTime(order.paidAt)} />}
-            {order.cancelledAt && <InfoRow label="Cancelado em" value={formatDateTime(order.cancelledAt)} />}
+            {order.canceledAt && <InfoRow label="Cancelado em" value={formatDateTime(order.canceledAt)} />}
           </CardBody>
         </Card>
 
@@ -155,8 +164,8 @@ export default function OrderDetailPage() {
           <CardHeader><h3 className="text-sm font-semibold text-gray-900">Cliente</h3></CardHeader>
           <CardBody className="space-y-3">
             <InfoRow label="ID" value={order.customerId} />
-            {order.customerName && <InfoRow label="Nome" value={order.customerName} />}
-            {order.customerEmail && <InfoRow label="E-mail" value={order.customerEmail} />}
+            {order.customer?.name && <InfoRow label="Nome" value={order.customer.name} />}
+            {order.customer?.email && <InfoRow label="E-mail" value={order.customer.email} />}
             <div className="pt-2">
               <Button
                 variant="outline"

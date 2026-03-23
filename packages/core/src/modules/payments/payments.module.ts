@@ -9,9 +9,10 @@ import { LicensesModule } from '../licenses/licenses.module'
 import { PlansModule } from '../plans/plans.module'
 import { ProductsModule } from '../products/products.module'
 import { CustomersModule } from '../customers/customers.module'
+import { SettingsModule } from '../settings/settings.module'
 
 @Module({
-  imports: [LicensesModule, PlansModule, ProductsModule, CustomersModule],
+  imports: [LicensesModule, PlansModule, ProductsModule, CustomersModule, SettingsModule],
   controllers: [PaymentsController],
   providers: [
     PaymentsService,

@@ -7,12 +7,13 @@ import {
   PaymentRefund,
   PreApproval,
 } from 'mercadopago'
-import type { PaymentCreateData } from 'mercadopago/dist/clients/payment/create/types'
-import type { PreApprovalCreateData } from 'mercadopago/dist/clients/preApproval/create/types'
-import type { CustomerCreateData } from 'mercadopago/dist/clients/customer/create/types'
+// Sub-path types inlined to avoid deep import resolution issues
+type PaymentCreateData    = { body: Record<string, any>; requestOptions?: Record<string, any> }
+type PreApprovalCreateData = { body: Record<string, any> }
+type CustomerCreateData   = { body: Record<string, any> }
 import * as crypto from 'crypto'
 
-// ─── Tipos internos ────────────────────────────────────────────────────────────
+// ─── Tipos internos ──────────────────────────────────────────────────────────
 
 export type MpBillingType = 'PIX' | 'CREDIT_CARD' | 'BOLETO' | 'UNDEFINED'
 
@@ -91,17 +92,33 @@ export interface CreateMpSubscriptionParams {
 export class MercadoPagoGateway {
 
   private readonly logger = new Logger(MercadoPagoGateway.name)
-  private readonly client: MercadoPagoConfig
-  private readonly webhookSecret: string
+  private client: MercadoPagoConfig
+  private webhookSecret: string
 
   constructor(private readonly config: ConfigService) {
-    const accessToken = config.getOrThrow<string>('MERCADOPAGO_ACCESS_TOKEN')
+    const accessToken = config.get<string>('MERCADOPAGO_ACCESS_TOKEN', '')
     this.webhookSecret = config.get<string>('MERCADOPAGO_WEBHOOK_SECRET', '')
 
-    this.client = new MercadoPagoConfig({
-      accessToken,
-      options: { timeout: 15_000 },
-    })
+    if (accessToken) {
+      this.client = new MercadoPagoConfig({
+        accessToken,
+        options: { timeout: 15_000 },
+      })
+    } else {
+      this.logger.warn('MERCADOPAGO_ACCESS_TOKEN não configurado — gateway inativo')
+      this.client = null as unknown as MercadoPagoConfig
+    }
+  }
+
+  /**
+   * Reinicializa o cliente com credenciais vindas do banco (via SettingsService).
+   * Chamado pelo CheckoutService antes de cada operação com o gateway.
+   */
+  setCredentials(accessToken: string, webhookSecret?: string): void {
+    if (!accessToken) throw new Error('Access Token do Mercado Pago não configurado')
+    this.client = new MercadoPagoConfig({ accessToken, options: { timeout: 15_000 } })
+    if (webhookSecret) this.webhookSecret = webhookSecret
+    this.logger.log('MercadoPago client inicializado com credenciais do banco')
   }
 
   // ─── Clientes ──────────────────────────────────────────────────────────────

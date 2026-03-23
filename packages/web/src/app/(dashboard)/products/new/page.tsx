@@ -8,15 +8,17 @@ import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 import { ArrowLeft } from 'lucide-react'
 
 const schema = z.object({
-  code: z.string().min(2, 'Código obrigatório').regex(/^[A-Z0-9_-]+$/, 'Apenas letras maiúsculas, números e _-'),
-  name: z.string().min(2, 'Nome obrigatório'),
+  code:        z.string().min(2, 'Código obrigatório').regex(/^[A-Z0-9_-]+$/, 'Apenas letras maiúsculas, números e _-'),
+  name:        z.string().min(2, 'Nome obrigatório'),
   description: z.string().optional(),
-  isActive: z.boolean().default(true),
+  billingType: z.enum(['recurring', 'one_time', 'hybrid']),
+  isActive:    z.boolean().default(true),
 })
 
 type FormData = z.infer<typeof schema>
@@ -27,16 +29,17 @@ export default function NewProductPage() {
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { isActive: true },
+    defaultValues: { billingType: 'recurring', isActive: true },
   })
 
   const isActive = watch('isActive')
 
   const mutation = useMutation({
-    mutationFn: (data: FormData) => api.post('/products', data),
-    onSuccess: (res) => {
-      router.push(`/products/${res.data.id}`)
-    },
+    mutationFn: (data: FormData) => api.post('/products', {
+      ...data,
+      status: data.isActive ? 'active' : 'inactive',
+    }),
+    onSuccess: (res) => router.push(`/products/${res.data.id}`),
     onError: (err: unknown) => {
       const axiosErr = err as { response?: { data?: { message?: string } } }
       setError(axiosErr?.response?.data?.message ?? 'Erro ao criar produto')
@@ -73,9 +76,7 @@ export default function NewProductPage() {
               placeholder="MINHA_APP"
               error={errors.code?.message}
               {...register('code', {
-                onChange: (e) => {
-                  e.target.value = e.target.value.toUpperCase()
-                },
+                onChange: (e) => { e.target.value = e.target.value.toUpperCase() },
               })}
             />
             <p className="text-xs text-gray-500 -mt-2">Apenas letras maiúsculas, números, _ e -</p>
@@ -86,6 +87,18 @@ export default function NewProductPage() {
               placeholder="Minha Aplicação"
               error={errors.name?.message}
               {...register('name')}
+            />
+
+            <Select
+              id="billingType"
+              label="Tipo de Cobrança"
+              options={[
+                { value: 'recurring', label: 'Recorrente (assinatura)' },
+                { value: 'one_time',  label: 'Avulso (pedido único)' },
+                { value: 'hybrid',    label: 'Híbrido (ambos)' },
+              ]}
+              error={errors.billingType?.message}
+              {...register('billingType')}
             />
 
             <Textarea
@@ -106,11 +119,9 @@ export default function NewProductPage() {
                   isActive ? 'bg-blue-600' : 'bg-gray-200'
                 }`}
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    isActive ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  isActive ? 'translate-x-6' : 'translate-x-1'
+                }`} />
               </button>
               <label className="text-sm text-gray-700">Produto ativo</label>
             </div>
@@ -118,12 +129,8 @@ export default function NewProductPage() {
         </Card>
 
         <div className="flex gap-3 justify-end">
-          <Button type="button" variant="outline" onClick={() => router.back()}>
-            Cancelar
-          </Button>
-          <Button type="submit" loading={mutation.isPending}>
-            Criar Produto
-          </Button>
+          <Button type="button" variant="outline" onClick={() => router.back()}>Cancelar</Button>
+          <Button type="submit" loading={mutation.isPending}>Criar Produto</Button>
         </div>
       </form>
     </div>

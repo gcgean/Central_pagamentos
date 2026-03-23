@@ -22,38 +22,40 @@ interface Subscription {
   id: string
   status: string
   customerId: string
-  customerName?: string
-  customerEmail?: string
+  customer?: { name: string; email: string }
   productId?: string
-  productName?: string
+  product?: { name: string; code: string }
   planId?: string
-  planName?: string
-  amount: number
+  plan?: { name: string; amount: number; intervalUnit: string; intervalCount: number }
   contractedAmount?: number
   trialDays?: number
+  trialEndsAt?: string
   currentPeriodStart?: string
   currentPeriodEnd?: string
   createdAt: string
-  cancelledAt?: string
-  cancelReason?: string
+  canceledAt?: string
+  cancellationReason?: string
 }
 
 const statusColors: Record<string, 'green' | 'gray' | 'red' | 'yellow' | 'blue' | 'orange'> = {
-  ACTIVE: 'green',
-  INACTIVE: 'gray',
-  CANCELLED: 'red',
-  PENDING: 'yellow',
-  TRIALING: 'blue',
-  OVERDUE: 'orange',
+  active:    'green',
+  inactive:  'gray',
+  canceled:  'red',
+  pending:   'yellow',
+  trialing:  'blue',
+  overdue:   'orange',
+  // legacy uppercase keys
+  ACTIVE: 'green', INACTIVE: 'gray', CANCELLED: 'red', PENDING: 'yellow', TRIALING: 'blue', OVERDUE: 'orange',
 }
 
 const statusLabels: Record<string, string> = {
-  ACTIVE: 'Ativo',
-  INACTIVE: 'Inativo',
-  CANCELLED: 'Cancelado',
-  PENDING: 'Pendente',
-  TRIALING: 'Trial',
-  OVERDUE: 'Vencido',
+  active:    'Ativo',
+  inactive:  'Inativo',
+  canceled:  'Cancelado',
+  pending:   'Pendente',
+  trialing:  'Trial',
+  overdue:   'Vencido',
+  ACTIVE: 'Ativo', INACTIVE: 'Inativo', CANCELLED: 'Cancelado', PENDING: 'Pendente', TRIALING: 'Trial', OVERDUE: 'Vencido',
 }
 
 const cancelSchema = z.object({
@@ -192,23 +194,23 @@ export default function SubscriptionDetailPage() {
           <CardHeader><h3 className="text-sm font-semibold text-gray-900">Dados da Assinatura</h3></CardHeader>
           <CardBody className="space-y-3">
             <InfoRow label="ID" value={sub.id} />
-            <InfoRow label="Valor" value={formatCurrency(sub.amount)} />
-            {sub.contractedAmount && <InfoRow label="Valor Contratado" value={formatCurrency(sub.contractedAmount)} />}
-            <InfoRow label="Período" value={sub.currentPeriodStart ? `${formatDate(sub.currentPeriodStart)} — ${formatDate(sub.currentPeriodEnd)}` : '—'} />
+            <InfoRow label="Valor Contratado" value={formatCurrency(sub.contractedAmount ?? 0)} />
+            {sub.plan?.amount != null && <InfoRow label="Valor do Plano" value={formatCurrency(sub.plan.amount)} />}
+            <InfoRow label="Período" value={sub.currentPeriodStart ? `${formatDate(sub.currentPeriodStart)} — ${formatDate(sub.currentPeriodEnd ?? '')}` : '—'} />
             <InfoRow label="Criado em" value={formatDateTime(sub.createdAt)} />
-            {sub.cancelledAt && <InfoRow label="Cancelado em" value={formatDateTime(sub.cancelledAt)} />}
-            {sub.cancelReason && <InfoRow label="Motivo do cancelamento" value={sub.cancelReason} />}
+            {sub.canceledAt && <InfoRow label="Cancelado em" value={formatDateTime(sub.canceledAt)} />}
+            {sub.cancellationReason && <InfoRow label="Motivo do cancelamento" value={sub.cancellationReason} />}
           </CardBody>
         </Card>
 
         <Card>
           <CardHeader><h3 className="text-sm font-semibold text-gray-900">Cliente & Produto</h3></CardHeader>
           <CardBody className="space-y-3">
-            {sub.customerName && <InfoRow label="Cliente" value={sub.customerName} />}
-            {sub.customerEmail && <InfoRow label="E-mail" value={sub.customerEmail} />}
-            <InfoRow label="Produto" value={sub.productName ?? '—'} />
-            <InfoRow label="Plano" value={sub.planName ?? '—'} />
-            {sub.trialDays && sub.trialDays > 0 ? <InfoRow label="Trial" value={`${sub.trialDays} dias`} /> : null}
+            {sub.customer?.name && <InfoRow label="Cliente" value={sub.customer.name} />}
+            {sub.customer?.email && <InfoRow label="E-mail" value={sub.customer.email} />}
+            <InfoRow label="Produto" value={sub.product?.name ?? '—'} />
+            <InfoRow label="Plano" value={sub.plan?.name ?? '—'} />
+            {sub.trialEndsAt && <InfoRow label="Trial até" value={formatDate(sub.trialEndsAt)} />}
           </CardBody>
         </Card>
       </div>

@@ -15,30 +15,32 @@ interface Subscription {
   id: string
   status: string
   customerId: string
-  customerName?: string
-  productName?: string
-  planName?: string
-  amount: number
+  customer?: { name: string; email: string }
+  product?: { name: string; code: string }
+  plan?: { name: string; amount: number }
+  contractedAmount?: number
   currentPeriodStart?: string
   currentPeriodEnd?: string
 }
 
 const statusColors: Record<string, 'green' | 'gray' | 'red' | 'yellow' | 'blue' | 'orange'> = {
-  ACTIVE: 'green',
-  INACTIVE: 'gray',
-  CANCELLED: 'red',
-  PENDING: 'yellow',
-  TRIALING: 'blue',
-  OVERDUE: 'orange',
+  active:   'green',
+  inactive: 'gray',
+  canceled: 'red',
+  pending:  'yellow',
+  trialing: 'blue',
+  overdue:  'orange',
+  ACTIVE: 'green', INACTIVE: 'gray', CANCELLED: 'red', PENDING: 'yellow', TRIALING: 'blue', OVERDUE: 'orange',
 }
 
 const statusLabels: Record<string, string> = {
-  ACTIVE: 'Ativo',
-  INACTIVE: 'Inativo',
-  CANCELLED: 'Cancelado',
-  PENDING: 'Pendente',
-  TRIALING: 'Trial',
-  OVERDUE: 'Vencido',
+  active:   'Ativo',
+  inactive: 'Inativo',
+  canceled: 'Cancelado',
+  pending:  'Pendente',
+  trialing: 'Trial',
+  overdue:  'Vencido',
+  ACTIVE: 'Ativo', INACTIVE: 'Inativo', CANCELLED: 'Cancelado', PENDING: 'Pendente', TRIALING: 'Trial', OVERDUE: 'Vencido',
 }
 
 export default function SubscriptionsPage() {
@@ -118,9 +120,9 @@ export default function SubscriptionsPage() {
                 <tbody className="divide-y divide-gray-50">
                   {subscriptions.map((sub) => (
                     <tr key={sub.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-3 text-sm font-medium text-gray-900">{sub.productName ?? '—'}</td>
-                      <td className="px-6 py-3 text-sm text-gray-600">{sub.planName ?? '—'}</td>
-                      <td className="px-6 py-3 text-sm text-gray-700 font-medium">{formatCurrency(sub.amount)}</td>
+                      <td className="px-6 py-3 text-sm font-medium text-gray-900">{sub.product?.name ?? '—'}</td>
+                      <td className="px-6 py-3 text-sm text-gray-600">{sub.plan?.name ?? '—'}</td>
+                      <td className="px-6 py-3 text-sm text-gray-700 font-medium">{formatCurrency(sub.contractedAmount ?? sub.plan?.amount ?? 0)}</td>
                       <td className="px-6 py-3">
                         <Badge variant={statusColors[sub.status] ?? 'gray'}>
                           {statusLabels[sub.status] ?? sub.status}
@@ -128,7 +130,7 @@ export default function SubscriptionsPage() {
                       </td>
                       <td className="px-6 py-3 text-sm text-gray-500">
                         {sub.currentPeriodStart
-                          ? `${formatDate(sub.currentPeriodStart)} — ${formatDate(sub.currentPeriodEnd)}`
+                          ? `${formatDate(sub.currentPeriodStart)} — ${formatDate(sub.currentPeriodEnd ?? '')}`
                           : '—'}
                       </td>
                       <td className="px-6 py-3 text-right">

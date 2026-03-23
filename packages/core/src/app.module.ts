@@ -15,6 +15,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module'
 import { IntegrationsModule } from './modules/integrations/integrations.module'
 import { AdminModule } from './modules/admin/admin.module'
 import { AccessModule } from './modules/access/access.module'
+import { SettingsModule } from './modules/settings/settings.module'
 import { DatabaseModule } from './shared/database/database.module'
 import { QueueModule } from './shared/queue/queue.module'
 
@@ -48,6 +49,7 @@ import { QueueModule } from './shared/queue/queue.module'
     IntegrationsModule,
     AdminModule,
     AccessModule,
+    SettingsModule,
   ],
 })
 export class AppModule {}

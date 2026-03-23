@@ -30,7 +30,14 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/api/v1/products)",
       "Bash(timeout /t 10 /nobreak)",
       "Bash(curl -s -o nul -w \"%{http_code}\" http://localhost:55443)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:55443)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:55443)",
+      "Bash(docker restart:*)",
+      "Bash(ls \"C:\\\\Projetos Web\\\\Central_pagamentos\\\\packages\\\\core\\\\node_modules\\\\mercadopago\\\\dist\\\\clients\"\" 2>/dev/null || ls \"C:Projetos WebCentral_pagamentosnode_modulesmercadopagodistclients\"\")",
+      "Bash(find 'C:/Projetos Web/Central_pagamentos' -path */mercadopago/dist/clients -type d)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(''''mercadopago'''' in d.get\\(''''dependencies'''',{}\\)\\)\")",
+      "Bash(find 'C:/Projetos Web/Central_pagamentos' -name .env* -not -path */node_modules/*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:62419)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:62419/docs)"
     ]
   }
 }

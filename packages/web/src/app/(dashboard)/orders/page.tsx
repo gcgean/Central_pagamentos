@@ -20,33 +20,38 @@ interface Order {
   id: string
   status: string
   customerId: string
-  customerName?: string
-  totalAmount: number
+  customer?: { name: string; email: string }
+  contractedAmount: number
   createdAt: string
 }
 
 const orderSchema = z.object({
   customerId: z.string().uuid('ID do cliente inválido'),
-  amount: z.string().refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0, 'Valor inválido'),
-  description: z.string().optional(),
+  productId: z.string().uuid('ID do produto inválido'),
+  planId: z.string().uuid('ID do plano inválido').optional().or(z.literal('')),
+  contractedAmount: z.string().refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0, 'Valor inválido'),
 })
 
 type OrderFormData = z.infer<typeof orderSchema>
 
 const statusColors: Record<string, 'green' | 'gray' | 'red' | 'yellow' | 'orange'> = {
-  PAID: 'green',
-  PENDING: 'yellow',
-  CANCELLED: 'red',
-  OVERDUE: 'orange',
-  REFUNDED: 'gray',
+  paid:             'green',
+  pending_payment:  'yellow',
+  draft:            'gray',
+  canceled:         'red',
+  overdue:          'orange',
+  refunded:         'gray',
+  PAID: 'green', PENDING: 'yellow', CANCELLED: 'red', OVERDUE: 'orange', REFUNDED: 'gray',
 }
 
 const statusLabels: Record<string, string> = {
-  PAID: 'Pago',
-  PENDING: 'Pendente',
-  CANCELLED: 'Cancelado',
-  OVERDUE: 'Vencido',
-  REFUNDED: 'Reembolsado',
+  paid:             'Pago',
+  pending_payment:  'Aguardando Pagamento',
+  draft:            'Rascunho',
+  canceled:         'Cancelado',
+  overdue:          'Vencido',
+  refunded:         'Reembolsado',
+  PAID: 'Pago', PENDING: 'Pendente', CANCELLED: 'Cancelado', OVERDUE: 'Vencido', REFUNDED: 'Reembolsado',
 }
 
 export default function OrdersPage() {
@@ -74,9 +79,10 @@ export default function OrdersPage() {
   const createMutation = useMutation({
     mutationFn: (data: OrderFormData) => {
       const payload = {
-        customerId: data.customerId,
-        amount: Math.round(parseFloat(data.amount) * 100),
-        description: data.description,
+        customerId:        data.customerId,
+        productId:         data.productId,
+        planId:            data.planId || undefined,
+        contractedAmount:  Math.round(parseFloat(data.contractedAmount) * 100),
       }
       return api.post('/orders', payload)
     },
@@ -151,8 +157,8 @@ export default function OrdersPage() {
                 <tbody>
                   <tr className="hover:bg-gray-50">
                     <td className="px-6 py-3 text-xs text-gray-500 font-mono">{order.id.slice(0, 8)}...</td>
-                    <td className="px-6 py-3 text-sm text-gray-700">{order.customerName ?? order.customerId.slice(0, 8)}</td>
-                    <td className="px-6 py-3 text-sm font-medium text-gray-900">{formatCurrency(order.totalAmount)}</td>
+                    <td className="px-6 py-3 text-sm text-gray-700">{order.customer?.name ?? order.customerId.slice(0, 8)}</td>
+                    <td className="px-6 py-3 text-sm font-medium text-gray-900">{formatCurrency(order.contractedAmount)}</td>
                     <td className="px-6 py-3">
                       <Badge variant={statusColors[order.status] ?? 'gray'}>
                         {statusLabels[order.status] ?? order.status}
@@ -188,20 +194,28 @@ export default function OrdersPage() {
             {...register('customerId')}
           />
           <Input
-            id="order-amount"
+            id="order-productId"
+            label="ID do Produto (UUID)"
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            error={errors.productId?.message}
+            {...register('productId')}
+          />
+          <Input
+            id="order-planId"
+            label="ID do Plano (opcional)"
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            error={errors.planId?.message}
+            {...register('planId')}
+          />
+          <Input
+            id="order-contractedAmount"
             label="Valor (R$)"
             type="number"
             step="0.01"
             min="0.01"
             placeholder="99.90"
-            error={errors.amount?.message}
-            {...register('amount')}
-          />
-          <Input
-            id="order-description"
-            label="Descrição (opcional)"
-            placeholder="Descrição do pedido..."
-            {...register('description')}
+            error={errors.contractedAmount?.message}
+            {...register('contractedAmount')}
           />
           <div className="flex gap-3 justify-end pt-2">
             <Button type="button" variant="outline" onClick={() => { setShowNewModal(false); reset(); setModalError('') }}>

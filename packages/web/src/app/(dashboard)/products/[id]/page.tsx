@@ -97,8 +97,10 @@ export default function ProductDetailPage() {
 
   const createPlanMutation = useMutation({
     mutationFn: (data: PlanFormData) => {
+      const { interval, ...rest } = data
       const payload = {
-        ...data,
+        ...rest,
+        intervalUnit: interval,           // API espera intervalUnit
         amount: Math.round(parseFloat(data.amount) * 100),
         intervalCount: Number(data.intervalCount),
         maxUsers: data.maxUsers ? Number(data.maxUsers) : undefined,
@@ -196,7 +198,7 @@ export default function ProductDetailPage() {
                       <td className="px-6 py-3 text-sm font-medium text-gray-900">{plan.name}</td>
                       <td className="px-6 py-3 text-sm text-gray-700 font-medium">{formatCurrency(plan.amount)}</td>
                       <td className="px-6 py-3 text-sm text-gray-600">
-                        A cada {plan.intervalCount} {intervalLabels[plan.interval] ?? plan.interval}
+                        A cada {plan.intervalCount} {intervalLabels[plan.intervalUnit ?? plan.interval] ?? plan.intervalUnit ?? plan.interval}
                       </td>
                       <td className="px-6 py-3 text-sm text-gray-500">{plan.maxUsers ?? '—'}</td>
                       <td className="px-6 py-3">

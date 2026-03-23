@@ -5,17 +5,19 @@ import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Users, Package, CreditCard, FileText,
-  Key, ShieldCheck, LogOut, Zap, BarChart3
+  Key, ShieldCheck, LogOut, Zap, BarChart3, Settings, BookOpen,
 } from 'lucide-react'
 
 const nav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/customers', label: 'Clientes', icon: Users },
-  { href: '/products', label: 'Produtos & Planos', icon: Package },
-  { href: '/subscriptions', label: 'Assinaturas', icon: Zap },
-  { href: '/orders', label: 'Pedidos', icon: FileText },
-  { href: '/licenses', label: 'Licenças', icon: ShieldCheck },
-  { href: '/integrations', label: 'Integrações', icon: Key },
+  { href: '/dashboard',    label: 'Dashboard',       icon: LayoutDashboard },
+  { href: '/customers',    label: 'Clientes',         icon: Users },
+  { href: '/products',     label: 'Produtos & Planos', icon: Package },
+  { href: '/subscriptions', label: 'Assinaturas',     icon: Zap },
+  { href: '/orders',       label: 'Pedidos',          icon: FileText },
+  { href: '/licenses',     label: 'Licenças',         icon: ShieldCheck },
+  { href: '/integrations', label: 'Integrações',      icon: Key },
+  { href: '/docs',         label: 'Documentação API', icon: BookOpen },
+  { href: '/settings',     label: 'Configurações',    icon: Settings },
 ]
 
 export function Sidebar() {

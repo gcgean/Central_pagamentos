@@ -29,9 +29,12 @@ async function bootstrap() {
     transformOptions: { enableImplicitConversion: true },
   }))
 
-  // CORS
+  // CORS — aceita "*" como wildcard em dev
+  const corsOrigins = config.get<string[]>('app.corsOrigins', ['http://localhost:3001'])
+  const corsOrigin: string | string[] | boolean =
+    corsOrigins.length === 1 && corsOrigins[0] === '*' ? true : corsOrigins
   app.enableCors({
-    origin: config.get<string[]>('app.corsOrigins', ['http://localhost:3001']),
+    origin: corsOrigin,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
   })

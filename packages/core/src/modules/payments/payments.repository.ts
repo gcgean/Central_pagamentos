@@ -8,9 +8,18 @@ export class PaymentsRepository {
   constructor(@Inject(DATABASE_CONNECTION) private readonly sql: Sql) {}
 
   async findInvoiceByOrigin(originType: string, originId: string) {
+    if (originType === 'subscription') {
+      const [row] = await this.sql`
+        SELECT * FROM invoices
+        WHERE subscription_id = ${originId}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `
+      return row ?? null
+    }
     const [row] = await this.sql`
       SELECT * FROM invoices
-      WHERE origin_type = ${originType} AND origin_id = ${originId}
+      WHERE order_id = ${originId}
       ORDER BY created_at DESC
       LIMIT 1
     `
@@ -61,11 +70,21 @@ export class PaymentsRepository {
   }
 
   async listChargesByOrigin(originType: string, originId: string) {
+    if (originType === 'subscription') {
+      return this.sql`
+        SELECT c.*
+        FROM charges c
+        JOIN invoices i ON i.id = c.invoice_id
+        WHERE i.subscription_id = ${originId}
+        ORDER BY c.created_at DESC
+      `
+    }
+    // order
     return this.sql`
       SELECT c.*
       FROM charges c
       JOIN invoices i ON i.id = c.invoice_id
-      WHERE i.origin_type = ${originType} AND i.origin_id = ${originId}
+      WHERE i.order_id = ${originId}
       ORDER BY c.created_at DESC
     `
   }
@@ -75,6 +94,16 @@ export class PaymentsRepository {
       UPDATE charges
       SET status = ${status}, paid_at = ${paidAt ?? null}, updated_at = NOW()
       WHERE id = ${id}
+      RETURNING *
+    `
+    return row
+  }
+
+  async updateChargeStatusByExternalId(externalChargeId: string, status: string, paidAt?: Date) {
+    const [row] = await this.sql`
+      UPDATE charges
+      SET status = ${status}, paid_at = ${paidAt ?? null}, updated_at = NOW()
+      WHERE external_charge_id = ${externalChargeId}
       RETURNING *
     `
     return row

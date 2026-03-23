@@ -57,10 +57,11 @@ export default function NewSubscriptionPage() {
   const mutation = useMutation({
     mutationFn: (data: FormData) => {
       const payload = {
-        customerId: data.customerId,
-        planId: data.planId,
+        customerId:       data.customerId,
+        productId:        data.productId,
+        planId:           data.planId,
         contractedAmount: Math.round(parseFloat(data.contractedAmount) * 100),
-        trialDays: data.trialDays ?? 0,
+        trialDays:        data.trialDays ?? 0,
       }
       return api.post('/subscriptions', payload)
     },
