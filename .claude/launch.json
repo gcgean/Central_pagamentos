@@ -1,0 +1,31 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hub-billing (monorepo dev)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "web (Next.js frontend)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "scripts\\start-web.bat"],
+      "port": 3001,
+      "autoPort": true
+    },
+    {
+      "name": "core api (NestJS watch)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=packages/core"],
+      "port": 3000
+    },
+    {
+      "name": "docker compose (full stack)",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up"],
+      "port": 3000,
+      "autoPort": false
+    }
+  ]
+}

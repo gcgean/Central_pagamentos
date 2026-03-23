@@ -4,6 +4,7 @@ import { PaymentsService } from './payments.service'
 import { CheckoutService } from './checkout.service'
 import { PaymentsRepository } from './payments.repository'
 import { AsaasGateway } from './gateways/asaas.gateway'
+import { MercadoPagoGateway } from './gateways/mercadopago.gateway'
 import { LicensesModule } from '../licenses/licenses.module'
 import { PlansModule } from '../plans/plans.module'
 import { ProductsModule } from '../products/products.module'
@@ -17,7 +18,8 @@ import { CustomersModule } from '../customers/customers.module'
     CheckoutService,
     PaymentsRepository,
     AsaasGateway,
+    MercadoPagoGateway,
   ],
-  exports: [PaymentsService, CheckoutService],
+  exports: [PaymentsService, CheckoutService, MercadoPagoGateway],
 })
 export class PaymentsModule {}

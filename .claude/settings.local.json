@@ -4,7 +4,30 @@
       "Bash(docker --version)",
       "Bash(docker compose:*)",
       "Bash(npm install:*)",
-      "Bash(docker exec:*)"
+      "Bash(docker exec:*)",
+      "Bash(curl -s http://localhost:3000/api/v1/customers)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm audit:*)",
+      "Bash(npm show:*)",
+      "Bash(node -e \"const v=require\\(''''fs''''\\).readFileSync\\(''''/dev/stdin'''',''''utf8''''\\); const arr=JSON.parse\\(v\\); const v14=arr.filter\\(x=>x.startsWith\\(''''14.''''\\)\\); const v15=arr.filter\\(x=>x.startsWith\\(''''15.''''\\)\\); console.log\\(''''Latest 14.x:'''', v14[v14.length-1]\\); console.log\\(''''Latest 15.x:'''', v15[v15.length-1]\\);\")",
+      "Bash(node -e \"const p=require\\(''./node_modules/next/package.json''\\); console.log\\(''Next.js installed:'', p.version\\)\")",
+      "Bash(dir \"C:\\\\Projetos Web\\\\Central_pagamentos\\\\packages\\\\web\")",
+      "Bash(dir 'C:\\\\Projetos Web\\\\Central_pagamentos')",
+      "Bash(node -e \"const p=require\\(''''/c/Projetos Web/Central_pagamentos/node_modules/next/package.json''''\\); console.log\\(''''Next.js:'''', p.version\\)\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001)",
+      "Bash(docker ps:*)",
+      "Bash(node -e \"const bcrypt = require\\(''bcrypt''\\); bcrypt.hash\\(''hub@2025'', 12\\).then\\(h => console.log\\(h\\)\\)\")",
+      "Bash(docker cp:*)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec hub_billing_postgres ls //tmp/)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec hub_billing_postgres psql -U hub -d hub_billing -f //tmp/fix_admin.sql)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec hub_billing_postgres psql -U hub -d hub_billing -c \"SELECT LEFT\\(password_hash, 10\\) FROM admins WHERE email = ''admin@hub.local'';\")",
+      "Bash(node -e \":*)",
+      "Bash(curl -s -X POST http://localhost:3000/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"\"email\"\":\"\"admin@hub.local\"\",\"\"password\"\":\"\"hub@2025\"\"}')",
+      "Bash(npx kill-port:*)",
+      "Bash(node -e \"const mp = require\\(''''mercadopago''''\\); console.log\\(Object.keys\\(mp\\)\\)\")",
+      "Bash(node -e \"const mp = require\\(''mercadopago''\\); console.log\\(Object.keys\\(mp\\)\\)\")",
+      "Bash(npx tsc:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/api/v1/products)"
     ]
   }
 }
