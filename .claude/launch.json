@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "hub-billing (monorepo dev)",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3000
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm run dev --workspace=packages/web"],
+      "autoPort": true
     },
     {
       "name": "web (Next.js frontend)",
