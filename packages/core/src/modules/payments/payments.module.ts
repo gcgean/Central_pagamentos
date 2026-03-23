@@ -5,10 +5,12 @@ import { CheckoutService } from './checkout.service'
 import { PaymentsRepository } from './payments.repository'
 import { AsaasGateway } from './gateways/asaas.gateway'
 import { LicensesModule } from '../licenses/licenses.module'
-import { SubscriptionsModule } from '../subscriptions/subscriptions.module'
+import { PlansModule } from '../plans/plans.module'
+import { ProductsModule } from '../products/products.module'
+import { CustomersModule } from '../customers/customers.module'
 
 @Module({
-  imports: [LicensesModule, SubscriptionsModule],
+  imports: [LicensesModule, PlansModule, ProductsModule, CustomersModule],
   controllers: [PaymentsController],
   providers: [
     PaymentsService,

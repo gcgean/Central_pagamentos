@@ -1,4 +1,3 @@
-// ── orders.service.ts ─────────────────────────────────────────────────────────
 import { Injectable, NotFoundException, Logger } from '@nestjs/common'
 import { Inject } from '@nestjs/common'
 import { DATABASE_CONNECTION } from '../../shared/database/database.module'
@@ -35,7 +34,6 @@ export class OrdersService {
       RETURNING *
     `
 
-    // Cria a invoice aberta para este pedido
     await this.sql`
       INSERT INTO invoices (
         customer_id, order_id, amount, currency, due_date
@@ -146,15 +144,3 @@ export class OrdersService {
     `
   }
 }
-
-// ── orders.module.ts ──────────────────────────────────────────────────────────
-import { Module } from '@nestjs/common'
-import { OrdersService } from './orders.service'
-import { AdminModule } from '../admin/admin.module'
-
-@Module({
-  imports: [AdminModule],
-  providers: [OrdersService],
-  exports: [OrdersService],
-})
-export class OrdersModule {}

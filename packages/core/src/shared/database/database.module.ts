@@ -1,6 +1,7 @@
 import { Module, Global } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import postgres from 'postgres'
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const postgres = require('postgres') as (url: string, opts?: any) => any
 
 export const DATABASE_CONNECTION = 'DATABASE_CONNECTION'
 

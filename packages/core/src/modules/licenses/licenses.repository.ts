@@ -16,8 +16,8 @@ export class LicensesRepository {
         starts_at, expires_at, grace_until,
         max_users, feature_set
       ) VALUES (
-        ${data.customerId}, ${data.productId}, ${data.planId ?? null},
-        ${data.originType}::license_origin, ${data.originId},
+        ${data.customerId ?? null}, ${data.productId ?? null}, ${data.planId ?? null},
+        ${(data.originType ?? 'manual') as string}::license_origin, ${data.originId ?? null},
         ${data.status ?? 'active'}::license_status,
         ${data.startsAt ?? new Date()},
         ${data.expiresAt ?? null},

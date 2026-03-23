@@ -1,5 +1,4 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common'
-import { InjectRepository } from '@nestjs/typeorm'
 import { createHash } from 'crypto'
 import { IntegrationsRepository } from '../../modules/integrations/integrations.repository'
 

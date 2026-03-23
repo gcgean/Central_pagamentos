@@ -1,5 +1,6 @@
 import {
-  Injectable, NotFoundException, ConflictException, BadRequestException, Logger
+  Injectable, NotFoundException, ConflictException, BadRequestException, Logger,
+  Inject, forwardRef
 } from '@nestjs/common'
 import { SubscriptionsRepository } from './subscriptions.repository'
 import { LicensesService } from '../licenses/licenses.service'
@@ -17,6 +18,7 @@ export class SubscriptionsService {
   constructor(
     private readonly repo: SubscriptionsRepository,
     private readonly licenses: LicensesService,
+    @Inject(forwardRef(() => InvoicesService))
     private readonly invoices: InvoicesService,
     private readonly audit: AuditService,
   ) {}
@@ -35,22 +37,22 @@ export class SubscriptionsService {
       productId: dto.productId,
       planId: dto.planId,
       contractedAmount: dto.contractedAmount,
-      status: dto.trialDays > 0 ? 'trialing' : 'pending',
+      status: (dto.trialDays ?? 0) > 0 ? 'trialing' : 'pending',
       startedAt: new Date(),
-      trialEndsAt: dto.trialDays > 0
-        ? dayjs().add(dto.trialDays, 'day').toDate()
+      trialEndsAt: (dto.trialDays ?? 0) > 0
+        ? dayjs().add(dto.trialDays!, 'day').toDate()
         : null,
     })
 
     // Se trial, emite licença imediatamente
-    if (dto.trialDays > 0) {
+    if ((dto.trialDays ?? 0) > 0) {
       await this.licenses.emit({
         customerId: dto.customerId,
         productId: dto.productId,
         planId: dto.planId,
         originType: 'trial',
         originId: subscription.id,
-        expiresAt: dayjs().add(dto.trialDays, 'day').toDate(),
+        expiresAt: dayjs().add(dto.trialDays!, 'day').toDate(),
         maxUsers: dto.maxUsers,
         featureSet: dto.featureSet,
       })

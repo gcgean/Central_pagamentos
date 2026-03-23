@@ -15,8 +15,8 @@ export class SubscriptionsRepository {
         contracted_amount, contracted_currency,
         status, started_at, trial_ends_at
       ) VALUES (
-        ${data.customerId}, ${data.productId}, ${data.planId},
-        ${data.contractedAmount}, ${data.contractedCurrency ?? 'BRL'},
+        ${data.customerId ?? null}, ${data.productId ?? null}, ${data.planId ?? null},
+        ${data.contractedAmount ?? null}, ${data.contractedCurrency ?? 'BRL'},
         ${data.status ?? 'pending'}::subscription_status,
         ${data.startedAt ?? null},
         ${data.trialEndsAt ?? null}
@@ -28,8 +28,8 @@ export class SubscriptionsRepository {
     await this.sql`
       INSERT INTO invoices (customer_id, subscription_id, amount, currency, due_date)
       VALUES (
-        ${data.customerId}, ${row.id},
-        ${data.contractedAmount},
+        ${data.customerId ?? null}, ${row.id},
+        ${data.contractedAmount ?? null},
         ${data.contractedCurrency ?? 'BRL'},
         (NOW() + INTERVAL '3 days')::date
       )

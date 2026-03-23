@@ -17,9 +17,9 @@ export class CustomersRepository {
         address_district, address_city, address_state,
         notes, metadata
       ) VALUES (
-        ${data.personType}, ${data.document}, ${data.documentClean},
-        ${data.legalName}, ${data.tradeName ?? null},
-        ${data.email}, ${data.phone ?? null}, 'active',
+        ${data.personType ?? null}, ${data.document ?? null}, ${data.documentClean},
+        ${data.legalName ?? null}, ${data.tradeName ?? null},
+        ${data.email ?? null}, ${data.phone ?? null}, 'active',
         ${data.addressZip ?? null}, ${data.addressStreet ?? null},
         ${data.addressNumber ?? null}, ${data.addressComp ?? null},
         ${data.addressDistrict ?? null}, ${data.addressCity ?? null},
@@ -52,7 +52,7 @@ export class CustomersRepository {
     search?: string
   }): Promise<{ data: Customer[]; total: number; page: number; limit: number }> {
     const offset = (params.page - 1) * params.limit
-    const status = params.status
+    const status = params.status ?? null
     const search = params.search ? `%${params.search}%` : null
 
     const rows = await this.sql`

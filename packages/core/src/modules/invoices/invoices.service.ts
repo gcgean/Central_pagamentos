@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { Injectable, Logger, NotFoundException, Inject, forwardRef } from '@nestjs/common'
 import { InvoicesRepository } from './invoices.repository'
 import { SubscriptionsService } from '../subscriptions/subscriptions.service'
 import { LicensesService } from '../licenses/licenses.service'
@@ -12,6 +12,7 @@ export class InvoicesService {
 
   constructor(
     private readonly repo: InvoicesRepository,
+    @Inject(forwardRef(() => SubscriptionsService))
     private readonly subscriptions: SubscriptionsService,
     private readonly licenses: LicensesService,
     private readonly orders: OrdersService,

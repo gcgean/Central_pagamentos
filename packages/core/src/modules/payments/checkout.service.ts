@@ -47,7 +47,7 @@ export class CheckoutService {
       name: customer.legalName,
       cpfCnpj: customer.documentClean,
       email: customer.email,
-      phone: customer.phone,
+      phone: customer.phone ?? undefined,
     })
 
     const dueDate = params.dueDate ?? dayjs().add(3, 'day').format('YYYY-MM-DD')
