@@ -1,0 +1,75 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hub_billing_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hub_billing
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD: hub_local_pass
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./packages/database/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./packages/database/seeds:/docker-entrypoint-initdb.d/seeds:ro
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/00_init.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U hub -d hub_billing']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: hub_billing_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: packages/core/Dockerfile.dev
+    container_name: hub_billing_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://hub:hub_local_pass@postgres:5432/hub_billing
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      APP_PORT: 3000
+    volumes:
+      - ./packages/core/src:/app/packages/core/src:ro
+    command: npm run dev
+
+  # Redis GUI — acesso em http://localhost:8001
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    container_name: hub_billing_redis_insight
+    restart: unless-stopped
+    ports:
+      - '8001:8001'
+    depends_on:
+      - redis
+
+volumes:
+  postgres_data:
+  redis_data:

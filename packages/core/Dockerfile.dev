@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY packages/core/package.json ./packages/core/
+
+RUN npm ci --workspace=packages/core
+
+COPY packages/core ./packages/core
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev", "--workspace=packages/core"]
