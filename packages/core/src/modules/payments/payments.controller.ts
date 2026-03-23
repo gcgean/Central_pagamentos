@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common'
+import { Controller, Get, Post, Param, Body, Query, UseGuards } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { AdminJwtGuard } from '../../shared/guards/admin-jwt.guard'
 import { PaymentsService } from './payments.service'
@@ -10,6 +10,15 @@ import { PaymentsService } from './payments.service'
 export class PaymentsController {
 
   constructor(private readonly service: PaymentsService) {}
+
+  @Get('charges')
+  @ApiOperation({ summary: 'Listar cobranças por origem (assinatura ou pedido)' })
+  listByOrigin(
+    @Query('originType') originType: string,
+    @Query('originId') originId: string,
+  ) {
+    return this.service.listByOrigin(originType, originId)
+  }
 
   @Get('charges/:externalId')
   @ApiOperation({ summary: 'Consultar cobrança no gateway' })

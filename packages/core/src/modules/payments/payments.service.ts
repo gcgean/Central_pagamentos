@@ -25,4 +25,8 @@ export class PaymentsService {
   async getCharge(externalChargeId: string) {
     return this.asaas.getCharge(externalChargeId)
   }
+
+  async listByOrigin(originType: string, originId: string) {
+    return this.repo.listChargesByOrigin(originType, originId)
+  }
 }

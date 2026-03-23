@@ -59,4 +59,24 @@ export class PaymentsRepository {
     `
     return row ?? null
   }
+
+  async listChargesByOrigin(originType: string, originId: string) {
+    return this.sql`
+      SELECT c.*
+      FROM charges c
+      JOIN invoices i ON i.id = c.invoice_id
+      WHERE i.origin_type = ${originType} AND i.origin_id = ${originId}
+      ORDER BY c.created_at DESC
+    `
+  }
+
+  async updateChargeStatus(id: string, status: string, paidAt?: Date) {
+    const [row] = await this.sql`
+      UPDATE charges
+      SET status = ${status}, paid_at = ${paidAt ?? null}, updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `
+    return row
+  }
 }
