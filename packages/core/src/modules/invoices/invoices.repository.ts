@@ -140,16 +140,31 @@ export class InvoicesRepository {
     return row ?? null
   }
 
+  async findLatestChargeByOrigin(originType: 'subscription' | 'order', originId: string) {
+    const col = originType === 'subscription' ? 'subscription_id' : 'order_id'
+    const [row] = await this.sql`
+      SELECT c.*
+      FROM charges c
+      INNER JOIN invoices i ON i.id = c.invoice_id
+      WHERE ${this.sql(col)} = ${originId}
+      ORDER BY c.created_at DESC
+      LIMIT 1
+    `
+    return row ?? null
+  }
+
   async updateCharge(id: string, data: {
     status?: string
     paidAt?: Date
     failedReason?: string
     nextRetryAt?: Date | null
+    externalChargeId?: string
   }) {
     const [row] = await this.sql`
       UPDATE charges SET
         status       = COALESCE(${data.status ?? null}::charge_status, status),
         paid_at      = COALESCE(${data.paidAt ?? null}, paid_at),
+        external_charge_id = COALESCE(${data.externalChargeId ?? null}, external_charge_id),
         failed_reason = COALESCE(${data.failedReason ?? null}, failed_reason),
         next_retry_at = CASE WHEN ${data.nextRetryAt !== undefined}
                         THEN ${data.nextRetryAt ?? null}

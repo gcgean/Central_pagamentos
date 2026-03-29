@@ -24,9 +24,21 @@ cp .env.production.example .env.production
 Edite `.env.production` com segredos reais.
 
 Obrigatórios:
-- `POSTGRES_PASSWORD`
+- `DATABASE_URL` (PostgreSQL externo recomendado)
 - `JWT_SECRET`
 - `MERCADOPAGO_ACCESS_TOKEN` ou `ASAAS_API_KEY` (conforme gateway ativo)
+
+Exemplo de `DATABASE_URL`:
+
+```text
+postgresql://hub_billing:SENHA_FORTE@154.53.48.79:5436/hub_billing
+```
+
+Se quiser usar Postgres local no mesmo compose, suba com profile:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production --profile localdb up -d --build
+```
 
 ## 3) Subir containers de produção
 

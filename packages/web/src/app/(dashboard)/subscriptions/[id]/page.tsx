@@ -17,7 +17,6 @@ import { Spinner } from '@/components/ui/Spinner'
 import { ArrowLeft, CreditCard, XCircle, RefreshCw } from 'lucide-react'
 import { CheckoutResult, type CheckoutResultData } from '@/components/payments/CheckoutResult'
 import { ChargesSection } from '@/components/payments/ChargesSection'
-import { tokenizeCreditCard } from '@/lib/mercadopago'
 
 interface Subscription {
   id: string
@@ -65,15 +64,8 @@ const cancelSchema = z.object({
 })
 
 const checkoutSchema = z.object({
-  billingType: z.enum(['PIX', 'CREDIT_CARD', 'BOLETO', 'UNDEFINED']),
+  billingType: z.enum(['PIX', 'CREDIT_CARD']),
   installmentCount: z.string().optional(),
-  cardNumber: z.string().optional(),
-  cardholderName: z.string().optional(),
-  cardExpirationMonth: z.string().optional(),
-  cardExpirationYear: z.string().optional(),
-  securityCode: z.string().optional(),
-  identificationType: z.enum(['CPF', 'CNPJ']).optional(),
-  identificationNumber: z.string().optional(),
 })
 
 const changePlanSchema = z.object({
@@ -84,42 +76,6 @@ const changePlanSchema = z.object({
 type CancelFormData = z.infer<typeof cancelSchema>
 type CheckoutFormData = z.infer<typeof checkoutSchema>
 type ChangePlanFormData = z.infer<typeof changePlanSchema>
-type CardFieldErrors = Partial<Record<'cardNumber' | 'cardholderName' | 'cardExpirationMonth' | 'cardExpirationYear' | 'securityCode' | 'identificationType' | 'identificationNumber' | 'installmentCount', string>>
-
-function validateCardFields(data: CheckoutFormData): CardFieldErrors {
-  const errors: CardFieldErrors = {}
-  const cardNumber = (data.cardNumber ?? '').replace(/\D/g, '')
-  const cardholderName = (data.cardholderName ?? '').trim()
-  const month = Number((data.cardExpirationMonth ?? '').trim())
-  const yearRaw = (data.cardExpirationYear ?? '').trim()
-  const year = Number(yearRaw.length === 2 ? `20${yearRaw}` : yearRaw)
-  const cvv = (data.securityCode ?? '').replace(/\D/g, '')
-  const docType = (data.identificationType ?? 'CPF') as 'CPF' | 'CNPJ'
-  const doc = (data.identificationNumber ?? '').replace(/\D/g, '')
-  const installments = Number((data.installmentCount ?? '1').trim())
-
-  if (!cardNumber || cardNumber.length < 13 || cardNumber.length > 19) errors.cardNumber = 'Número do cartão inválido.'
-  if (!cardholderName || cardholderName.length < 3) errors.cardholderName = 'Nome no cartão inválido.'
-  if (!Number.isInteger(month) || month < 1 || month > 12) errors.cardExpirationMonth = 'Mês inválido.'
-  if (!Number.isInteger(year) || year < 2024 || year > 2099) errors.cardExpirationYear = 'Ano inválido.'
-  if (!cvv || cvv.length < 3 || cvv.length > 4) errors.securityCode = 'CVV inválido.'
-  if (docType === 'CPF' && doc.length !== 11) errors.identificationNumber = 'CPF inválido.'
-  if (docType === 'CNPJ' && doc.length !== 14) errors.identificationNumber = 'CNPJ inválido.'
-  if (!Number.isInteger(installments) || installments < 1 || installments > 12) errors.installmentCount = 'Parcelas devem ser entre 1 e 12.'
-
-  return errors
-}
-
-function mapTokenizationErrorToField(message: string): CardFieldErrors {
-  const msg = message.toLowerCase()
-  if (msg.includes('número do cartão') || msg.includes('card number') || msg.includes('number')) return { cardNumber: message }
-  if (msg.includes('nome no cartão') || msg.includes('cardholder') || msg.includes('name')) return { cardholderName: message }
-  if (msg.includes('cvv') || msg.includes('security code') || msg.includes('código de segurança')) return { securityCode: message }
-  if (msg.includes('mês') || msg.includes('month')) return { cardExpirationMonth: message }
-  if (msg.includes('ano') || msg.includes('year') || msg.includes('expiration')) return { cardExpirationYear: message }
-  if (msg.includes('cpf') || msg.includes('cnpj') || msg.includes('document') || msg.includes('identification')) return { identificationNumber: message }
-  return {}
-}
 
 interface Plan { id: string; name: string; amount: number }
 
@@ -133,7 +89,6 @@ export default function SubscriptionDetailPage() {
   const [showChangePlanModal, setShowChangePlanModal] = useState(false)
   const [checkoutResult, setCheckoutResult] = useState<CheckoutResultData | null>(null)
   const [actionError, setActionError] = useState('')
-  const [cardFieldErrors, setCardFieldErrors] = useState<CardFieldErrors>({})
 
   const { data: sub, isLoading } = useQuery<Subscription>({
     queryKey: ['subscription', id],
@@ -170,55 +125,38 @@ export default function SubscriptionDetailPage() {
 
   const checkoutMutation = useMutation({
     mutationFn: (data: CheckoutFormData) => api.post(`/subscriptions/${id}/checkout`, data),
-    onSuccess: ({ data }) => {
+    onSuccess: ({ data }, variables) => {
       queryClient.invalidateQueries({ queryKey: ['subscription', id] })
       queryClient.invalidateQueries({ queryKey: ['charges', 'subscription', id] })
       setShowCheckoutModal(false)
+      if (variables.billingType === 'CREDIT_CARD') {
+        const redirectUrl = data?.checkoutUrl
+        if (!redirectUrl) {
+          setActionError('Não foi possível obter URL do checkout do Mercado Pago.')
+          return
+        }
+        try {
+          const parsed = new URL(redirectUrl)
+          const allowedHosts = ['mercadopago.com', 'mercadopago.com.br', 'www.mercadopago.com.br', 'www.mercadopago.com']
+          if (!allowedHosts.some((host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`))) {
+            setActionError('URL de redirecionamento inválida para checkout.')
+            return
+          }
+          window.location.href = redirectUrl
+          return
+        } catch {
+          setActionError('URL de redirecionamento inválida para checkout.')
+          return
+        }
+      }
       setCheckoutResult(data)
     },
     onError: (err: any) => setActionError(err?.response?.data?.message ?? 'Erro ao gerar cobrança'),
   })
 
-  const submitCheckout = checkoutForm.handleSubmit(async (data) => {
+  const submitCheckout = checkoutForm.handleSubmit((data) => {
     setActionError('')
-    setCardFieldErrors({})
-    if (data.billingType !== 'CREDIT_CARD') {
-      checkoutMutation.mutate(data)
-      return
-    }
-    const validationErrors = validateCardFields(data)
-    if (Object.keys(validationErrors).length > 0) {
-      setCardFieldErrors(validationErrors)
-      setActionError('Corrija os campos destacados do cartão.')
-      return
-    }
-    try {
-      const { data: keyRes } = await api.get('/settings/gateway/mercadopago/public-key')
-      const publicKey: string = keyRes?.publicKey
-      if (!publicKey) throw new Error('Public Key do Mercado Pago não configurada.')
-      const tokenized = await tokenizeCreditCard(publicKey, {
-        cardNumber: data.cardNumber ?? '',
-        cardholderName: data.cardholderName ?? '',
-        cardExpirationMonth: data.cardExpirationMonth ?? '',
-        cardExpirationYear: data.cardExpirationYear ?? '',
-        securityCode: data.securityCode ?? '',
-        identificationType: data.identificationType ?? 'CPF',
-        identificationNumber: data.identificationNumber ?? '',
-      })
-      checkoutMutation.mutate({
-        billingType: 'CREDIT_CARD',
-        installmentCount: data.installmentCount,
-        creditCard: {
-          token: tokenized.token,
-          paymentMethodId: tokenized.paymentMethodId,
-          issuerId: tokenized.issuerId, // Include issuerId for MercadoPago
-        },
-      } as any)
-    } catch (err: any) {
-      const msg = err?.response?.data?.message ?? err?.message ?? 'Falha ao tokenizar cartão.'
-      setCardFieldErrors(mapTokenizationErrorToField(msg))
-      setActionError(msg)
-    }
+    checkoutMutation.mutate(data)
   })
 
   const changePlanMutation = useMutation({
@@ -345,31 +283,14 @@ export default function SubscriptionDetailPage() {
             options={[
               { value: 'PIX', label: 'PIX' },
               { value: 'CREDIT_CARD', label: 'Cartão de Crédito' },
-              { value: 'BOLETO', label: 'Boleto' },
-              { value: 'UNDEFINED', label: 'Indefinido' },
             ]}
             {...checkoutForm.register('billingType')}
           />
           {checkoutForm.watch('billingType') === 'CREDIT_CARD' && (
             <div className="space-y-3 border border-gray-200 rounded-lg p-3">
-              <Input id="cardNumber" label="Número do cartão" placeholder="5031 4332 1540 6351" error={cardFieldErrors.cardNumber} {...checkoutForm.register('cardNumber')} />
-              <Input id="cardholderName" label="Nome no cartão" placeholder="APRO" error={cardFieldErrors.cardholderName} {...checkoutForm.register('cardholderName')} />
-              <div className="grid grid-cols-3 gap-3">
-                <Input id="cardExpirationMonth" label="Mês" placeholder="11" error={cardFieldErrors.cardExpirationMonth} {...checkoutForm.register('cardExpirationMonth')} />
-                <Input id="cardExpirationYear" label="Ano" placeholder="2030" error={cardFieldErrors.cardExpirationYear} {...checkoutForm.register('cardExpirationYear')} />
-                <Input id="securityCode" label="CVV" placeholder="123" error={cardFieldErrors.securityCode} {...checkoutForm.register('securityCode')} />
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <Select
-                  id="identificationType"
-                  label="Tipo documento"
-                  options={[{ value: 'CPF', label: 'CPF' }, { value: 'CNPJ', label: 'CNPJ' }]}
-                  error={cardFieldErrors.identificationType}
-                  {...checkoutForm.register('identificationType')}
-                />
-                <Input id="identificationNumber" label="Documento" placeholder="99999999999" error={cardFieldErrors.identificationNumber} {...checkoutForm.register('identificationNumber')} />
-                <Input id="installmentCount" label="Parcelas" type="number" min="1" step="1" placeholder="1" error={cardFieldErrors.installmentCount} {...checkoutForm.register('installmentCount')} />
-              </div>
+              <p className="text-sm text-gray-700">
+                Você será redirecionado para o checkout seguro do Mercado Pago para concluir o pagamento com cartão.
+              </p>
             </div>
           )}
           <div className="flex gap-3 justify-end">

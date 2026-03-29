@@ -454,14 +454,11 @@ async function loadUserProfile(customerId) {
           <Endpoint
             method="POST"
             path="/orders/{orderId}/checkout"
-            description="Gera cobrança PIX, cartão ou boleto para o pedido"
+            description="Gera cobrança PIX ou cartão para o pedido"
           >
             <PropTable rows={[
-              { name: 'billingType', type: `'PIX' | 'CREDIT_CARD' | 'BOLETO' | 'UNDEFINED'`, required: true, description: 'Método de pagamento' },
+              { name: 'billingType', type: `'PIX' | 'CREDIT_CARD'`, required: true, description: 'Método de pagamento' },
               { name: 'installmentCount', type: 'number', required: false, description: 'Parcelas (cartão)' },
-              { name: 'creditCard.token', type: 'string', required: false, description: 'Token do cartão (Mercado Pago.js/Asaas)' },
-              { name: 'creditCard.paymentMethodId', type: 'string', required: false, description: 'Bandeira do cartão (ex: visa/master)' },
-              { name: 'creditCard.issuerId', type: 'string', required: false, description: 'ID do emissor (quando aplicável)' },
             ]} />
             <CodeBlock language="json" code={`{
   "billingType": "PIX"

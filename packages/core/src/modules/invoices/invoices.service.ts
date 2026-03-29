@@ -21,7 +21,7 @@ export class InvoicesService {
   // ─── Chamado pelo WebhookProcessor quando pagamento é confirmado ─────────
 
   async markPaid(externalChargeId: string, payload: any): Promise<void> {
-    const charge = await this.repo.findLatestChargeByExternalId(externalChargeId)
+    const charge = await this.resolveChargeForEvent(externalChargeId, payload)
     if (!charge) {
       this.logger.warn(`Charge não encontrado: ${externalChargeId}`)
       return
@@ -44,7 +44,11 @@ export class InvoicesService {
     const paidAt = new Date(payload.paymentDate ?? payload.confirmedDate ?? Date.now())
 
     // 1. Atualiza o charge
-    await this.repo.updateCharge(chargeId, { status: 'paid', paidAt })
+    await this.repo.updateCharge(chargeId, {
+      status: 'paid',
+      paidAt,
+      externalChargeId: externalChargeId || undefined,
+    })
 
     // 2. Cria o payment
     if (shouldCreatePayment) {
@@ -112,7 +116,7 @@ export class InvoicesService {
   }
 
   async markFailed(externalChargeId: string, reason: string): Promise<void> {
-    const charge = await this.repo.findLatestChargeByExternalId(externalChargeId)
+    const charge = await this.resolveChargeForEvent(externalChargeId, { reason })
     if (!charge) return
     const chargeId = charge.id
     const chargeAttemptNumber = charge.attemptNumber ?? charge.attempt_number
@@ -123,6 +127,7 @@ export class InvoicesService {
       status: 'failed',
       failedReason: reason,
       nextRetryAt: this.calculateNextRetry(chargeAttemptNumber),
+      externalChargeId: externalChargeId || undefined,
     })
 
     // Se atingiu o máximo de tentativas, marca a invoice como incobrable
@@ -139,7 +144,7 @@ export class InvoicesService {
   }
 
   async handleChargeback(externalChargeId: string): Promise<void> {
-    const charge = await this.repo.findLatestChargeByExternalId(externalChargeId)
+    const charge = await this.resolveChargeForEvent(externalChargeId, {})
     if (!charge) return
     const chargeId = charge.id
     const chargeInvoiceId = charge.invoiceId ?? charge.invoice_id
@@ -165,9 +170,36 @@ export class InvoicesService {
   }
 
   async markChargeExpired(externalChargeId: string): Promise<void> {
-    const charge = await this.repo.findLatestChargeByExternalId(externalChargeId)
+    const charge = await this.resolveChargeForEvent(externalChargeId, {})
     if (!charge) return
     await this.repo.updateCharge(charge.id, { status: 'canceled' })
+  }
+
+  private async resolveChargeForEvent(externalChargeId: string, payload: any) {
+    if (externalChargeId) {
+      const byExternal = await this.repo.findLatestChargeByExternalId(externalChargeId)
+      if (byExternal) return byExternal
+    }
+
+    const externalReference =
+      payload?.externalReference ??
+      payload?.external_reference ??
+      payload?.charge?.external_reference
+
+    if (!externalReference || typeof externalReference !== 'string') {
+      return null
+    }
+
+    const [originTypeRaw, ...rest] = externalReference.split(':')
+    const originType = originTypeRaw === 'subscription' ? 'subscription' : originTypeRaw === 'order' ? 'order' : null
+    const originId = rest.join(':')
+    if (!originType || !originId) return null
+
+    const byOrigin = await this.repo.findLatestChargeByOrigin(originType, originId)
+    if (byOrigin) {
+      this.logger.log(`Charge resolvido por external_reference: ${originType}:${originId}`)
+    }
+    return byOrigin
   }
 
   async findById(id: string) {

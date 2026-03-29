@@ -216,11 +216,14 @@ export class WebhooksController {
         : (body.id ?? body.data?.object?.id ?? body.paymentId)
 
     let payload = body
-    if (provider === 'mercadopago' && eventType === 'payment.updated' && externalId) {
+    if (provider === 'mercadopago' && ['payment.updated', 'payment.created'].includes(eventType) && externalId) {
       const cfg = await this.settings.getGatewayConfig()
       this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
       const charge = await this.mp.getCharge(String(externalId))
-      payload = { ...body, charge }
+      const externalReference = String((charge as any).external_reference ?? '')
+      const [originType, ...rest] = externalReference.split(':')
+      const originId = rest.join(':')
+      payload = { ...body, charge, chargeId: String(charge.id), externalReference, originType, originId }
       if (charge.status === 'approved') eventType = 'payment.approved'
       else if (['rejected', 'cancelled', 'refunded', 'charged_back'].includes(charge.status)) eventType = 'payment.failed'
     }

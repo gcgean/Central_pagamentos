@@ -13,9 +13,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!isLoading) {
       if (!token) {
-        router.push('/login')
+        router.replace('/login')
       } else if (admin?.mustChangePassword) {
-        router.push('/change-password')
+        router.replace('/change-password')
       }
     }
   }, [isLoading, token, admin, router])
@@ -28,7 +28,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
-  if (!token) return null
+  if (!token) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Spinner />
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen">

@@ -6,6 +6,7 @@ import {
   Payment,
   PaymentRefund,
   PreApproval,
+  Preference,
 } from 'mercadopago'
 // Sub-path types inlined to avoid deep import resolution issues
 type PaymentCreateData    = { body: Record<string, any>; requestOptions?: Record<string, any> }
@@ -15,7 +16,7 @@ import * as crypto from 'crypto'
 
 // ─── Tipos internos ──────────────────────────────────────────────────────────
 
-export type MpBillingType = 'PIX' | 'CREDIT_CARD' | 'BOLETO' | 'UNDEFINED'
+export type MpBillingType = 'PIX' | 'CREDIT_CARD'
 
 export interface MpCustomer {
   id: string
@@ -64,17 +65,25 @@ export interface CreateMpChargeParams {
   name: string
   amount: number                   // em centavos
   description: string
-  billingType: MpBillingType
+  billingType: 'PIX'
   externalReference?: string
   installments?: number
   // Cartão de crédito tokenizado (via Mercado Pago.js no front)
-  cardToken?: string
-  cardPaymentMethodId?: string
-  cardIssuerId?: string
   // PIX — expiração customizada (padrão 24h)
   pixExpiresInMinutes?: number
-  // Boleto — data de vencimento
-  boletoDueDate?: string           // YYYY-MM-DD
+}
+
+export interface CreateMpHostedCheckoutParams {
+  title: string
+  amount: number
+  quantity?: number
+  payerEmail: string
+  externalReference: string
+  successUrl: string
+  pendingUrl: string
+  failureUrl: string
+  notificationUrl?: string
+  maxInstallments?: number
 }
 
 export interface CreateMpSubscriptionParams {
@@ -213,32 +222,6 @@ export class MercadoPagoGateway {
         body.date_of_expiration = new Date(Date.now() + minutes * 60_000).toISOString()
       }
 
-      // Cartão de crédito — requer token gerado pelo Mercado Pago.js no front
-      if (params.billingType === 'CREDIT_CARD') {
-        if (!params.cardToken) {
-          throw new BadGatewayException(
-            'Token de cartão obrigatório. Gere via Mercado Pago.js antes de enviar.',
-          )
-        }
-        if (!params.cardPaymentMethodId) {
-          throw new BadGatewayException(
-            'payment_method_id do cartão obrigatório. Tokenize e informe a bandeira do cartão.',
-          )
-        }
-        body.token = params.cardToken
-        body.installments = params.installments ?? 1
-        body.payment_method_id = params.cardPaymentMethodId
-        if (params.cardIssuerId) body.issuer_id = Number(params.cardIssuerId)
-      }
-
-      // Boleto — vencimento
-      if (params.billingType === 'BOLETO') {
-        body.payment_method_id = 'bolbradesco'
-        if (params.boletoDueDate) {
-          body.date_of_expiration = `${params.boletoDueDate}T23:59:59.999-03:00`
-        }
-      }
-
       const idempotencyKey = `charge-${params.externalReference ?? Date.now()}`
       const result = await new Payment(this.client).create({
         body,
@@ -249,6 +232,53 @@ export class MercadoPagoGateway {
       return result as unknown as MpCharge
     } catch (err) {
       this.handleError('createCharge', err)
+    }
+  }
+
+  async createHostedCheckout(params: CreateMpHostedCheckoutParams): Promise<{ id: string; initPoint: string; sandboxInitPoint?: string }> {
+    try {
+      const body = {
+        items: [
+          {
+            id: params.externalReference,
+            title: params.title,
+            quantity: params.quantity ?? 1,
+            currency_id: 'BRL',
+            unit_price: params.amount / 100,
+          },
+        ],
+        payer: {
+          email: params.payerEmail,
+        },
+        external_reference: params.externalReference,
+        back_urls: {
+          success: params.successUrl,
+          pending: params.pendingUrl,
+          failure: params.failureUrl,
+        },
+        auto_return: 'approved',
+        notification_url: params.notificationUrl,
+        payment_methods: {
+          excluded_payment_types: [{ id: 'ticket' }],
+          excluded_payment_methods: [{ id: 'bolbradesco' }, { id: 'pec' }],
+          installments: params.maxInstallments ?? 12,
+        },
+      }
+
+      const result = await new Preference(this.client).create({ body })
+      const initPoint = (result as any).init_point as string
+      const sandboxInitPoint = (result as any).sandbox_init_point as string | undefined
+      const id = String((result as any).id)
+
+      this.logger.log(`MP checkout hospedado criado: preference ${id}`)
+
+      return {
+        id,
+        initPoint,
+        sandboxInitPoint,
+      }
+    } catch (err) {
+      this.handleError('createHostedCheckout', err)
     }
   }
 
@@ -430,8 +460,6 @@ export class MercadoPagoGateway {
     const map: Record<MpBillingType, string> = {
       PIX:         'pix',
       CREDIT_CARD: 'credit_card',
-      BOLETO:      'bolbradesco',
-      UNDEFINED:   'pix',
     }
     return map[billingType]
   }

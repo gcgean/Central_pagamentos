@@ -15,11 +15,8 @@ export interface CreateCheckoutParams {
   planId: string
   originType: 'subscription' | 'order'
   originId: string
-  billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO' | 'UNDEFINED'
+  billingType: 'PIX' | 'CREDIT_CARD'
   installmentCount?: number
-  dueDate?: string
-  creditCard?: any
-  creditCardHolderInfo?: any
   remoteIp?: string
 }
 
@@ -81,7 +78,55 @@ export class CheckoutService {
     this.mp.setCredentials(gwConfig.mercadopago.accessToken, gwConfig.mercadopago.webhookSecret)
 
     const description = `${product.name} — ${plan.name}`
-    const dueDate     = params.dueDate ?? dayjs().add(3, 'day').format('YYYY-MM-DD')
+    const dueDate     = dayjs().add(3, 'day').format('YYYY-MM-DD')
+    const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
+    const webhookUrl = this.config.get<string>('MERCADOPAGO_WEBHOOK_URL', '').trim()
+
+    this.logger.log(`Iniciando checkout Mercado Pago [${params.billingType}] para ${params.originType}:${params.originId}`)
+
+    if (params.billingType === 'CREDIT_CARD') {
+      const preference = await this.mp.createHostedCheckout({
+        title: description,
+        amount: plan.amount,
+        payerEmail: customer.email,
+        externalReference: `${params.originType}:${params.originId}`,
+        successUrl: `${appUrl}/${params.originType === 'order' ? 'orders' : 'subscriptions'}/${params.originId}`,
+        pendingUrl: `${appUrl}/${params.originType === 'order' ? 'orders' : 'subscriptions'}/${params.originId}`,
+        failureUrl: `${appUrl}/${params.originType === 'order' ? 'orders' : 'subscriptions'}/${params.originId}`,
+        notificationUrl: webhookUrl || undefined,
+        maxInstallments: params.installmentCount ?? 12,
+      })
+
+      const invoice = await this.repo.findInvoiceByOrigin(params.originType, params.originId)
+      const checkoutUrl = preference.initPoint || preference.sandboxInitPoint || null
+      const localCharge = await this.repo.createCharge({
+        invoiceId: invoice.id,
+        customerId: params.customerId,
+        amount: plan.amount,
+        currency: plan.currency ?? 'BRL',
+        paymentMethod: 'credit_card',
+        gatewayName: 'mercadopago',
+        externalChargeId: preference.id,
+        checkoutUrl: checkoutUrl ?? undefined,
+        installmentCount: params.installmentCount ?? 1,
+        attemptNumber: 1,
+        maxAttempts: 3,
+      })
+
+      this.logger.log(`Checkout hospedado MP criado: charge ${localCharge.id} → preference ${preference.id}`)
+
+      return {
+        chargeId: localCharge.id,
+        externalChargeId: preference.id,
+        checkoutUrl,
+        pixQrCode: null,
+        pixPayload: null,
+        boletoUrl: null,
+        amount: plan.amount,
+        currency: plan.currency ?? 'BRL',
+        dueDate,
+      }
+    }
 
     const charge = await this.mp.createCharge({
       email:             customer.email,
@@ -89,17 +134,12 @@ export class CheckoutService {
       name:             customer.legalName ?? customer.name,
       amount:           plan.amount,          // em centavos
       description,
-      billingType:      params.billingType as any,
+      billingType:      'PIX',
       externalReference: `${params.originType}:${params.originId}`,
       installments:     params.installmentCount,
-      cardToken:        params.creditCard?.token,
-      cardPaymentMethodId: params.creditCard?.paymentMethodId || 'master', // Fallback opcional, mas no MP ideal é vir
-      cardIssuerId:     params.creditCard?.issuerId,
-      boletoDueDate:    params.billingType === 'BOLETO' ? dueDate : undefined,
     })
 
-    const pixData   = params.billingType === 'PIX'    ? this.mp.extractPixData(charge)   : null
-    const boletoUrl = params.billingType === 'BOLETO' ? this.mp.extractBoletoUrl(charge) : null
+    const pixData = this.mp.extractPixData(charge)
 
     const invoice     = await this.repo.findInvoiceByOrigin(params.originType, params.originId)
     const localCharge = await this.repo.createCharge({
@@ -107,13 +147,11 @@ export class CheckoutService {
       customerId:       params.customerId,
       amount:           plan.amount,
       currency:         plan.currency ?? 'BRL',
-      paymentMethod:    params.billingType.toLowerCase() as any,
+      paymentMethod:    'pix',
       gatewayName:      'mercadopago',
       externalChargeId: String(charge.id),
-      checkoutUrl:      boletoUrl ?? `https://mercadopago.com.br/checkout/${charge.id}`,
       pixQrCode:        pixData?.qrCodeBase64,
-      pixExpiresAt:     params.billingType === 'PIX' ? dayjs().add(24, 'hour').toDate() : undefined,
-      boletoUrl:        boletoUrl ?? undefined,
+      pixExpiresAt:     dayjs().add(24, 'hour').toDate(),
       installmentCount: params.installmentCount ?? 1,
       attemptNumber:    1,
       maxAttempts:      3,
@@ -124,10 +162,10 @@ export class CheckoutService {
     return {
       chargeId:         localCharge.id,
       externalChargeId: String(charge.id),
-      checkoutUrl:      boletoUrl ?? null,
+      checkoutUrl:      null,
       pixQrCode:        pixData?.qrCodeBase64 ?? null,
       pixPayload:       pixData?.qrCode ?? null,
-      boletoUrl:        boletoUrl ?? null,
+      boletoUrl:        null,
       amount:           plan.amount,
       currency:         plan.currency ?? 'BRL',
       dueDate,
@@ -149,7 +187,7 @@ export class CheckoutService {
       phone:   customer.phone ?? undefined,
     })
 
-    const dueDate     = params.dueDate ?? dayjs().add(3, 'day').format('YYYY-MM-DD')
+    const dueDate     = dayjs().add(3, 'day').format('YYYY-MM-DD')
     const description = `${product.name} — ${plan.name}`
 
     const charge = await this.asaas.createCharge({
@@ -163,8 +201,6 @@ export class CheckoutService {
       installmentValue: params.installmentCount
         ? Math.ceil(plan.amount / params.installmentCount)
         : undefined,
-      creditCard:           params.creditCard,
-      creditCardHolderInfo: params.creditCardHolderInfo,
       remoteIp:             params.remoteIp,
     })
 
@@ -190,7 +226,7 @@ export class CheckoutService {
       pixExpiresAt:     params.billingType === 'PIX'
         ? dayjs().add(24, 'hour').toDate()
         : undefined,
-      boletoUrl:        charge.bankSlipUrl,
+      boletoUrl:        undefined,
       installmentCount: params.installmentCount ?? 1,
       attemptNumber:    1,
       maxAttempts:      3,
@@ -204,7 +240,7 @@ export class CheckoutService {
       checkoutUrl:      charge.invoiceUrl,
       pixQrCode:        pixQrCode ?? null,
       pixPayload:       pixPayload ?? null,
-      boletoUrl:        charge.bankSlipUrl ?? null,
+      boletoUrl:        null,
       amount:           plan.amount,
       currency:         plan.currency,
       dueDate,
@@ -218,7 +254,7 @@ export class CheckoutService {
     productId: string
     planId: string
     subscriptionId: string
-    billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO'
+    billingType: 'PIX' | 'CREDIT_CARD'
   }) {
     const customer = await this.customers.findById(params.customerId)
     const plan     = await this.plans.findById(params.planId)

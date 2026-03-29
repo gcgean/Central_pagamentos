@@ -33,14 +33,11 @@ class ChangePlanDto {
 }
 
 class CreateCheckoutDto {
-  @ApiProperty({ enum: ['PIX', 'CREDIT_CARD', 'BOLETO', 'UNDEFINED'] })
-  @IsIn(['PIX', 'CREDIT_CARD', 'BOLETO', 'UNDEFINED'])
-  billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO' | 'UNDEFINED'
+  @ApiProperty({ enum: ['PIX', 'CREDIT_CARD'] })
+  @IsIn(['PIX', 'CREDIT_CARD'])
+  billingType: 'PIX' | 'CREDIT_CARD'
 
   @ApiPropertyOptional() @IsOptional() @IsNumber() installmentCount?: number
-  @ApiPropertyOptional() @IsOptional() dueDate?: string
-  @ApiPropertyOptional() @IsOptional() creditCard?: any
-  @ApiPropertyOptional() @IsOptional() creditCardHolderInfo?: any
 }
 
 @ApiTags('subscriptions')

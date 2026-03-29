@@ -25,8 +25,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedToken = localStorage.getItem('hub_token')
     const storedAdmin = localStorage.getItem('hub_admin')
     if (storedToken && storedAdmin) {
-      setToken(storedToken)
-      setAdmin(JSON.parse(storedAdmin))
+      try {
+        const parsedAdmin = JSON.parse(storedAdmin)
+        setToken(storedToken)
+        setAdmin(parsedAdmin)
+      } catch {
+        localStorage.removeItem('hub_token')
+        localStorage.removeItem('hub_admin')
+        setToken(null)
+        setAdmin(null)
+      }
     }
     setIsLoading(false)
   }, [])

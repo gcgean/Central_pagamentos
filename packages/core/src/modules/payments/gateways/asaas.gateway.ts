@@ -16,7 +16,7 @@ export interface AsaasCustomer {
 export interface AsaasCharge {
   id: string
   customer: string
-  billingType: 'BOLETO' | 'CREDIT_CARD' | 'PIX' | 'UNDEFINED'
+  billingType: 'CREDIT_CARD' | 'PIX'
   value: number
   dueDate: string
   status: string
@@ -43,7 +43,7 @@ export interface CreateChargeParams {
   value: number             // em reais (o Asaas usa reais, convertemos de centavos)
   dueDate: string           // YYYY-MM-DD
   description: string
-  billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO' | 'UNDEFINED'
+  billingType: 'PIX' | 'CREDIT_CARD'
   externalReference?: string
   installmentCount?: number
   installmentValue?: number

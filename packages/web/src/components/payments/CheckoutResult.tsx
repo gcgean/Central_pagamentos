@@ -97,7 +97,7 @@ export function CheckoutResult({ result, onClose }: { result: CheckoutResultData
         </div>
       )}
 
-      {/* Link de pagamento genérico (cartão ou UNDEFINED) */}
+      {/* Link de pagamento para checkout hospedado */}
       {!isPix && !isBoleto && hasLink && (
         <div className="space-y-3">
           <p className="text-sm font-semibold text-gray-800">Link de Pagamento</p>
