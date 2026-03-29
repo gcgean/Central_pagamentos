@@ -136,6 +136,7 @@ export default function CustomersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-100">
+                    <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Documento</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">E-mail</th>
@@ -147,7 +148,12 @@ export default function CustomersPage() {
                 <tbody className="divide-y divide-gray-50">
                   {data.data.map((customer) => (
                     <tr key={customer.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-3">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded" title={customer.id}>
+                          {customer.id}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
                         <div>
                           <p className="text-sm font-medium text-gray-900">{customer.name}</p>
                           <p className="text-xs text-gray-400">{customer.personType === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'}</p>

@@ -69,6 +69,8 @@ export interface CreateMpChargeParams {
   installments?: number
   // Cartão de crédito tokenizado (via Mercado Pago.js no front)
   cardToken?: string
+  cardPaymentMethodId?: string
+  cardIssuerId?: string
   // PIX — expiração customizada (padrão 24h)
   pixExpiresInMinutes?: number
   // Boleto — data de vencimento
@@ -119,6 +121,18 @@ export class MercadoPagoGateway {
     this.client = new MercadoPagoConfig({ accessToken, options: { timeout: 15_000 } })
     if (webhookSecret) this.webhookSecret = webhookSecret
     this.logger.log('MercadoPago client inicializado com credenciais do banco')
+  }
+
+  async verifyCredentials(accessToken: string): Promise<{ accountEmail?: string; accountId?: number }> {
+    const res = await fetch('https://api.mercadopago.com/users/me', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new BadGatewayException(`Falha ao validar credenciais no Mercado Pago: ${res.status} ${text}`)
+    }
+    const data = await res.json() as { email?: string; id?: number }
+    return { accountEmail: data.email, accountId: data.id }
   }
 
   // ─── Clientes ──────────────────────────────────────────────────────────────
@@ -190,6 +204,8 @@ export class MercadoPagoGateway {
           },
         },
       }
+      const notificationUrl = this.config.get<string>('MERCADOPAGO_WEBHOOK_URL', '').trim()
+      if (notificationUrl) body.notification_url = notificationUrl
 
       // PIX — define expiração
       if (params.billingType === 'PIX') {
@@ -204,9 +220,15 @@ export class MercadoPagoGateway {
             'Token de cartão obrigatório. Gere via Mercado Pago.js antes de enviar.',
           )
         }
+        if (!params.cardPaymentMethodId) {
+          throw new BadGatewayException(
+            'payment_method_id do cartão obrigatório. Tokenize e informe a bandeira do cartão.',
+          )
+        }
         body.token = params.cardToken
         body.installments = params.installments ?? 1
-        body.payment_method_id = 'credit_card'
+        body.payment_method_id = params.cardPaymentMethodId
+        if (params.cardIssuerId) body.issuer_id = Number(params.cardIssuerId)
       }
 
       // Boleto — vencimento

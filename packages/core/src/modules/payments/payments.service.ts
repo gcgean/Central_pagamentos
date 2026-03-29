@@ -1,50 +1,89 @@
-import { Injectable, Logger } from '@nestjs/common'
-import { ConfigService } from '@nestjs/config'
+import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { AsaasGateway } from './gateways/asaas.gateway'
+import { MercadoPagoGateway } from './gateways/mercadopago.gateway'
 import { PaymentsRepository } from './payments.repository'
+import { SettingsService } from '../settings/settings.service'
+import { InvoicesService } from '../invoices/invoices.service'
 
 @Injectable()
 export class PaymentsService {
 
   private readonly logger = new Logger(PaymentsService.name)
-  private readonly mockMode: boolean
 
   constructor(
-    private readonly config: ConfigService,
     private readonly asaas: AsaasGateway,
+    private readonly mp: MercadoPagoGateway,
+    private readonly settings: SettingsService,
     private readonly repo: PaymentsRepository,
-  ) {
-    this.mockMode = config.get<string>('MOCK_GATEWAY') === 'true'
-  }
+    private readonly invoices: InvoicesService,
+  ) {}
 
   async refund(externalChargeId: string, value?: number): Promise<void> {
-    if (this.mockMode || externalChargeId.startsWith('mock_')) {
-      this.logger.warn(`[MOCK] Estorno simulado: ${externalChargeId}`)
-      await this.repo.updateChargeStatusByExternalId(externalChargeId, 'refunded')
-      return
+    const charge = await this.repo.findLatestChargeByExternalId(externalChargeId)
+    if (!charge) throw new NotFoundException('Cobrança não encontrada')
+    const gateway = charge.gatewayName ?? charge.gateway_name
+
+    if (gateway === 'mercadopago') {
+      const cfg = await this.settings.getGatewayConfig()
+      this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
+      await this.mp.refundPayment(externalChargeId, value)
+    } else {
+      await this.asaas.refundPayment(externalChargeId, value)
     }
-    await this.asaas.refundPayment(externalChargeId, value)
     this.logger.log(`Reembolso solicitado: ${externalChargeId}`)
   }
 
   async cancelCharge(externalChargeId: string): Promise<void> {
-    if (this.mockMode || externalChargeId.startsWith('mock_')) {
-      this.logger.warn(`[MOCK] Cancelamento simulado: ${externalChargeId}`)
-      await this.repo.updateChargeStatusByExternalId(externalChargeId, 'canceled')
-      return
+    const charge = await this.repo.findLatestChargeByExternalId(externalChargeId)
+    if (!charge) throw new NotFoundException('Cobrança não encontrada')
+    const gateway = charge.gatewayName ?? charge.gateway_name
+
+    if (gateway === 'mercadopago') {
+      const cfg = await this.settings.getGatewayConfig()
+      this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
+      await this.mp.cancelCharge(externalChargeId)
+    } else {
+      await this.asaas.cancelCharge(externalChargeId)
     }
-    await this.asaas.cancelCharge(externalChargeId)
     this.logger.log(`Cobrança cancelada: ${externalChargeId}`)
   }
 
   async getCharge(externalChargeId: string) {
-    if (this.mockMode || externalChargeId.startsWith('mock_')) {
-      return { id: externalChargeId, status: 'PENDING', value: 0 }
+    const charge = await this.repo.findLatestChargeByExternalId(externalChargeId)
+    if (!charge) throw new NotFoundException('Cobrança não encontrada')
+    const gateway = charge.gatewayName ?? charge.gateway_name
+
+    if (gateway === 'mercadopago') {
+      const cfg = await this.settings.getGatewayConfig()
+      this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
+      return this.mp.getCharge(externalChargeId)
     }
     return this.asaas.getCharge(externalChargeId)
   }
 
   async listByOrigin(originType: string, originId: string) {
+    const charges = await this.repo.listChargesByOrigin(originType, originId)
+    for (const charge of charges) {
+      const status = charge.status
+      const gateway = charge.gatewayName ?? charge.gateway_name
+      if (status === 'pending' && gateway === 'mercadopago') {
+        await this.syncPendingMercadoPagoCharge(charge.externalChargeId ?? charge.external_charge_id)
+      }
+    }
     return this.repo.listChargesByOrigin(originType, originId)
+  }
+
+  private async syncPendingMercadoPagoCharge(externalChargeId: string) {
+    if (!externalChargeId) return
+    const cfg = await this.settings.getGatewayConfig()
+    this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
+    const remote = await this.mp.getCharge(externalChargeId)
+    if (remote.status === 'approved') {
+      await this.invoices.markPaid(String(remote.id), remote)
+      return
+    }
+    if (['rejected', 'cancelled', 'refunded', 'charged_back'].includes(remote.status)) {
+      await this.invoices.markFailed(String(remote.id), remote.status_detail ?? remote.status)
+    }
   }
 }

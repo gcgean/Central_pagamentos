@@ -3,13 +3,14 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
 
-interface Admin { id: string; name: string; email: string; role: string }
+interface Admin { id: string; name: string; email: string; role: string; mustChangePassword?: boolean }
 interface AuthContextType {
   admin: Admin | null
   token: string | null
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   isLoading: boolean
+  setAdmin: (admin: Admin) => void
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -36,7 +37,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('hub_admin', JSON.stringify(data.admin))
     setToken(data.accessToken)
     setAdmin(data.admin)
-    router.push('/dashboard')
+    
+    if (data.admin.mustChangePassword) {
+      router.push('/change-password')
+    } else {
+      router.push('/dashboard')
+    }
   }
 
   const logout = () => {
@@ -48,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ admin, token, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ admin, token, login, logout, isLoading, setAdmin }}>
       {children}
     </AuthContext.Provider>
   )

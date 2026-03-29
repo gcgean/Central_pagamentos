@@ -16,7 +16,7 @@ import {
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type ActiveGateway = 'mock' | 'mercadopago' | 'asaas'
+type ActiveGateway = 'mercadopago' | 'asaas'
 
 interface GatewayConfig {
   activeGateway: ActiveGateway
@@ -25,8 +25,9 @@ interface GatewayConfig {
 }
 
 const schema = z.object({
-  activeGateway: z.enum(['mock', 'mercadopago', 'asaas']),
+  activeGateway: z.enum(['mercadopago', 'asaas']),
   mercadopago_accessToken: z.string().optional(),
+  mercadopago_publicKey: z.string().optional(),
   mercadopago_webhookSecret: z.string().optional(),
   asaas_apiKey: z.string().optional(),
 })
@@ -152,7 +153,7 @@ export default function SettingsPage() {
   const { control, handleSubmit, watch, setValue, reset } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      activeGateway: 'mock',
+      activeGateway: 'asaas',
       mercadopago_accessToken: '',
       mercadopago_webhookSecret: '',
       asaas_apiKey: '',
@@ -172,9 +173,10 @@ export default function SettingsPage() {
   const saveMutation = useMutation({
     mutationFn: async (data: FormData) => {
       const payload: any = { activeGateway: data.activeGateway }
-      if (data.mercadopago_accessToken || data.mercadopago_webhookSecret) {
+      if (data.mercadopago_accessToken || data.mercadopago_publicKey || data.mercadopago_webhookSecret) {
         payload.mercadopago = {}
         if (data.mercadopago_accessToken) payload.mercadopago.accessToken = data.mercadopago_accessToken
+        if (data.mercadopago_publicKey) payload.mercadopago.publicKey = data.mercadopago_publicKey
         if (data.mercadopago_webhookSecret) payload.mercadopago.webhookSecret = data.mercadopago_webhookSecret
       }
       if (data.asaas_apiKey) {
@@ -253,14 +255,6 @@ export default function SettingsPage() {
                 render={({ field }) => (
                   <>
                     <GatewayOption
-                      value="mock"
-                      selected={field.value === 'mock'}
-                      onSelect={() => field.onChange('mock')}
-                      icon={<TestTube2 size={16} className="text-purple-600" />}
-                      label="Modo Simulação"
-                      description="Nenhum gateway real é chamado. Ideal para desenvolvimento e testes."
-                    />
-                    <GatewayOption
                       value="mercadopago"
                       selected={field.value === 'mercadopago'}
                       onSelect={() => field.onChange('mercadopago')}
@@ -331,11 +325,27 @@ export default function SettingsPage() {
                   render={({ field }) => (
                     <SecretInput
                       id="mp-access-token"
-                      label="Access Token"
+                      label="Access Token (Obrigatório)"
                       placeholder={config?.mercadopago.isConfigured ? 'Deixe em branco para manter o atual' : 'TEST-xxxx ou APP_USR-xxxx'}
                       value={field.value ?? ''}
                       onChange={field.onChange}
                       hint="Chave de acesso da sua conta Mercado Pago"
+                    />
+                  )}
+                />
+
+                <Controller
+                  // @ts-ignore - publicKey field added dynamically
+                  name="mercadopago_publicKey"
+                  control={control}
+                  render={({ field }) => (
+                    <SecretInput
+                      id="mp-public-key"
+                      label="Public Key (Para tokenização de Cartões)"
+                      placeholder={config?.mercadopago.isConfigured ? 'Deixe em branco para manter a atual' : 'TEST-xxxx ou APP_USR-xxxx'}
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      hint="Chave pública da sua conta Mercado Pago"
                     />
                   )}
                 />
@@ -346,8 +356,8 @@ export default function SettingsPage() {
                   render={({ field }) => (
                     <SecretInput
                       id="mp-webhook-secret"
-                      label="Webhook Secret (opcional)"
-                      placeholder={config?.mercadopago.isConfigured ? 'Deixe em branco para manter o atual' : 'Chave secreta do webhook'}
+                      label="Webhook Secret (Para validação de eventos)"
+                      placeholder={config?.mercadopago.isConfigured ? 'Deixe em branco para manter o atual' : 'Senha do webhook no Mercado Pago'}
                       value={field.value ?? ''}
                       onChange={field.onChange}
                       hint="Usada para validar a autenticidade dos eventos recebidos do Mercado Pago"
@@ -410,28 +420,6 @@ export default function SettingsPage() {
                     />
                   )}
                 />
-              </div>
-            </CardBody>
-          </Card>
-        )}
-
-        {/* Mock info */}
-        {activeGateway === 'mock' && (
-          <Card>
-            <CardBody>
-              <div className="flex gap-3 items-start">
-                <TestTube2 size={20} className="text-purple-500 mt-0.5 flex-shrink-0" />
-                <div className="text-sm">
-                  <p className="font-medium text-gray-900">Modo Simulação ativo</p>
-                  <p className="text-gray-500 mt-1">
-                    Nenhum gateway real será chamado. Cobranças, PIX e Boletos são gerados localmente
-                    com dados fictícios para fins de teste.
-                  </p>
-                  <p className="text-gray-500 mt-1">
-                    Para usar em produção, selecione <strong>Mercado Pago</strong> ou <strong>Asaas</strong>
-                    {' '}e informe suas credenciais.
-                  </p>
-                </div>
               </div>
             </CardBody>
           </Card>

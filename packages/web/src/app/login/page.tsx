@@ -65,7 +65,7 @@ export default function LoginPage() {
               id="email"
               label="E-mail"
               type="email"
-              placeholder="admin@empresa.com"
+              placeholder="seu@email.com"
               autoComplete="email"
               error={errors.email?.message}
               {...register('email')}

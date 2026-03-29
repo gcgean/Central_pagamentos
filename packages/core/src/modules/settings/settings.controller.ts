@@ -19,6 +19,11 @@ class MercadoPagoCredentialsDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
+  publicKey?: string
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
   webhookSecret?: string
 }
 
@@ -30,9 +35,9 @@ class AsaasCredentialsDto {
 }
 
 class UpdateGatewayDto {
-  @ApiProperty({ enum: ['mock', 'mercadopago', 'asaas'], required: false })
+  @ApiProperty({ enum: ['mercadopago', 'asaas'], required: false })
   @IsOptional()
-  @IsIn(['mock', 'mercadopago', 'asaas'])
+  @IsIn(['mercadopago', 'asaas'])
   activeGateway?: ActiveGateway
 
   @ApiProperty({ type: MercadoPagoCredentialsDto, required: false })
@@ -49,8 +54,8 @@ class UpdateGatewayDto {
 }
 
 class TestGatewayDto {
-  @ApiProperty({ enum: ['mock', 'mercadopago', 'asaas'] })
-  @IsIn(['mock', 'mercadopago', 'asaas'])
+  @ApiProperty({ enum: ['mercadopago', 'asaas'] })
+  @IsIn(['mercadopago', 'asaas'])
   gateway: ActiveGateway
 }
 
@@ -70,6 +75,13 @@ export class SettingsController {
     return this.settings.getGatewayConfigMasked()
   }
 
+  @Get('gateway/mercadopago/public-key')
+  @ApiOperation({ summary: 'Retorna Public Key do Mercado Pago para tokenização no frontend' })
+  async getMercadoPagoPublicKey() {
+    const publicKey = await this.settings.getMercadoPagoPublicKey()
+    return { publicKey }
+  }
+
   @Put('gateway')
   @ApiOperation({ summary: 'Salva configuração do gateway de pagamento' })
   updateGateway(@Body() dto: UpdateGatewayDto) {
@@ -81,15 +93,10 @@ export class SettingsController {
   async testGateway(@Body() dto: TestGatewayDto) {
     const cfg = await this.settings.getGatewayConfig()
 
-    if (dto.gateway === 'mock') {
-      return { ok: true, message: 'Modo simulação ativo — nenhum gateway real será chamado.' }
-    }
-
     if (dto.gateway === 'mercadopago') {
       if (!cfg.mercadopago.isConfigured) {
         throw new BadRequestException('Access Token do Mercado Pago não configurado.')
       }
-      // Teste leve: valida prefixo do token
       const token = cfg.mercadopago.accessToken
       const isTest = token.startsWith('TEST-')
       const isProd = token.startsWith('APP_USR-')
@@ -98,9 +105,10 @@ export class SettingsController {
           'Access Token inválido. Deve começar com TEST- (homologação) ou APP_USR- (produção).',
         )
       }
+      const account = await this.settings.validateMercadoPagoCredentials(token)
       return {
         ok: true,
-        message: `Credenciais Mercado Pago salvas. Ambiente: ${isTest ? '🧪 Homologação (TEST-)' : '🚀 Produção (APP_USR-)'}`,
+        message: `Conexão Mercado Pago OK. Conta: ${account.accountEmail ?? 'sem e-mail'} (${account.accountId ?? 'sem id'}). Ambiente: ${isTest ? '🧪 Homologação' : '🚀 Produção'}`,
       }
     }
 

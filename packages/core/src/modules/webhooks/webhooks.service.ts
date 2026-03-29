@@ -98,8 +98,9 @@ export class WebhookProcessorService extends WorkerHost {
   async process(job: Job<{ eventId: string }>) {
     const event = await this.repo.findById(job.data.eventId)
     if (!event || event.processed) return
+    const eventType = event.eventType ?? event.event_type
 
-    this.log.log(`Processando webhook ${event.id} [${event.eventType}]`)
+    this.log.log(`Processando webhook ${event.id} [${eventType}]`)
 
     try {
       await this.dispatch(event)
@@ -112,19 +113,26 @@ export class WebhookProcessorService extends WorkerHost {
   }
 
   private async dispatch(event: any) {
-    const { eventType, payload } = event
+    const eventType = event.eventType ?? event.event_type
+    const payload = event.payload
 
     switch (eventType) {
       // ── Pagamento aprovado ───────────────────────────────────────────────
       case 'payment.approved':
       case 'payment.confirmed':
-        await this.invoices.markPaid(payload.chargeId ?? payload.invoiceExternalId, payload)
+        await this.invoices.markPaid(
+          String(payload?.chargeId ?? payload?.invoiceExternalId ?? payload?.data?.id ?? payload?.charge?.id),
+          payload?.charge ?? payload,
+        )
         break
 
       // ── Pagamento falhou ─────────────────────────────────────────────────
       case 'payment.failed':
       case 'payment.declined':
-        await this.invoices.markFailed(payload.chargeId, payload.reason)
+        await this.invoices.markFailed(
+          String(payload?.chargeId ?? payload?.data?.id ?? payload?.charge?.id),
+          payload?.reason ?? payload?.status_detail ?? 'Falha no pagamento',
+        )
         break
 
       // ── Assinatura cancelada pelo gateway ────────────────────────────────
@@ -151,6 +159,8 @@ export class WebhookProcessorService extends WorkerHost {
 // ── webhooks.controller.ts ────────────────────────────────────────────────────
 import { Controller, Post, Param, Req, Headers, RawBodyRequest } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { MercadoPagoGateway } from '../payments/gateways/mercadopago.gateway'
+import { SettingsService } from '../settings/settings.service'
 
 @Controller({ path: 'webhooks', version: '1' })
 export class WebhooksController {
@@ -158,6 +168,8 @@ export class WebhooksController {
   constructor(
     private readonly ingest: WebhooksIngestService,
     private readonly config: ConfigService,
+    private readonly settings: SettingsService,
+    private readonly mp: MercadoPagoGateway,
   ) {}
 
   // Ponto de entrada para qualquer gateway: /api/v1/webhooks/gateway/asaas
@@ -167,28 +179,57 @@ export class WebhooksController {
     @Req() req: RawBodyRequest<any>,
     @Headers('x-asaas-signature') asaasSignature?: string,
     @Headers('stripe-signature') stripeSignature?: string,
+    @Headers('x-signature') mpSignature?: string,
+    @Headers('x-request-id') mpRequestId?: string,
   ) {
     const body = req.body
-    const rawBody = req.rawBody
-    const signature = asaasSignature ?? stripeSignature
+    const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(body ?? {}))
+    const signature = mpSignature ?? asaasSignature ?? stripeSignature
 
-    // Valida assinatura se houver secret configurado
-    const secret = this.config.get<string>(`gateways.${provider}.webhookSecret`)
-    if (secret && signature) {
-      const valid = this.ingest.validateSignature(rawBody, signature, secret)
-      if (!valid) {
-        throw new BadRequestException('Assinatura de webhook inválida')
+    if (provider === 'mercadopago') {
+      const cfg = await this.settings.getGatewayConfig()
+      const dataId = String(body?.data?.id ?? body?.id ?? '')
+      if (cfg.mercadopago.webhookSecret && mpSignature && mpRequestId && dataId) {
+        this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
+        const valid = this.mp.validateWebhookSignature(mpSignature, mpRequestId, dataId)
+        if (!valid) {
+          throw new BadRequestException('Assinatura de webhook inválida')
+        }
+      }
+    } else {
+      const secret = this.config.get<string>(`gateways.${provider}.webhookSecret`)
+      if (secret && signature) {
+        const valid = this.ingest.validateSignature(rawBody, signature, secret)
+        if (!valid) {
+          throw new BadRequestException('Assinatura de webhook inválida')
+        }
       }
     }
 
-    const eventType = body.event ?? body.type ?? 'unknown'
-    const externalId = body.id ?? body.data?.object?.id ?? body.paymentId
+    let eventType =
+      provider === 'mercadopago'
+        ? (body.action ?? body.type ?? 'unknown')
+        : (body.event ?? body.type ?? 'unknown')
+    const externalId =
+      provider === 'mercadopago'
+        ? (body.data?.id ?? body.id ?? body.paymentId)
+        : (body.id ?? body.data?.object?.id ?? body.paymentId)
+
+    let payload = body
+    if (provider === 'mercadopago' && eventType === 'payment.updated' && externalId) {
+      const cfg = await this.settings.getGatewayConfig()
+      this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
+      const charge = await this.mp.getCharge(String(externalId))
+      payload = { ...body, charge }
+      if (charge.status === 'approved') eventType = 'payment.approved'
+      else if (['rejected', 'cancelled', 'refunded', 'charged_back'].includes(charge.status)) eventType = 'payment.failed'
+    }
 
     return this.ingest.ingest({
       gatewayName: provider,
       eventType,
       externalEventId: String(externalId),
-      payload: body,
+      payload,
       rawBody,
       signature,
     })

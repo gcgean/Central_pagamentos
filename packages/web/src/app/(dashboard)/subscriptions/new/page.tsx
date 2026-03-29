@@ -19,7 +19,7 @@ const schema = z.object({
   customerId: z.string().uuid('ID de cliente inválido (UUID)'),
   productId: z.string().min(1, 'Selecione um produto'),
   planId: z.string().min(1, 'Selecione um plano'),
-  contractedAmount: z.string().refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0, 'Valor inválido'),
+  contractedAmount: z.string().refine((v) => !isNaN(parseFloat(v.replace(',', '.'))) && parseFloat(v.replace(',', '.')) > 0, 'Valor inválido'),
   trialDays: z.coerce.number().int().min(0).optional(),
 })
 
@@ -60,8 +60,8 @@ export default function NewSubscriptionPage() {
         customerId:       data.customerId,
         productId:        data.productId,
         planId:           data.planId,
-        contractedAmount: Math.round(parseFloat(data.contractedAmount) * 100),
-        trialDays:        data.trialDays ?? 0,
+        contractedAmount: Math.round(parseFloat(data.contractedAmount.replace(',', '.')) * 100),
+        trialDays:        data.trialDays || 0,
       }
       return api.post('/subscriptions', payload)
     },

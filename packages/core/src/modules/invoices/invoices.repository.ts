@@ -129,6 +129,17 @@ export class InvoicesRepository {
     return row ?? null
   }
 
+  async findLatestChargeByExternalId(externalChargeId: string) {
+    const [row] = await this.sql`
+      SELECT *
+      FROM charges
+      WHERE external_charge_id = ${externalChargeId}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `
+    return row ?? null
+  }
+
   async updateCharge(id: string, data: {
     status?: string
     paidAt?: Date

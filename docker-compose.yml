@@ -14,7 +14,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./packages/database/migrations:/docker-entrypoint-initdb.d/migrations:ro
-      - ./packages/database/seeds:/docker-entrypoint-initdb.d/seeds:ro
       - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/00_init.sh:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U hub -d hub_billing']
@@ -57,10 +56,10 @@ services:
       JWT_SECRET: dev_jwt_secret_change_in_production
       APP_PORT: 3000
       CORS_ORIGINS: "*"
-      ASAAS_BASE_URL: https://sandbox.asaas.com/api/v3
-      ASAAS_API_KEY: dev_placeholder_key
-      ASAAS_WEBHOOK_SECRET: dev_webhook_secret
-      MOCK_GATEWAY: "true"
+      ASAAS_BASE_URL: https://api.asaas.com/v3
+      ASAAS_API_KEY: ${ASAAS_API_KEY}
+      ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_SECRET}
+      MERCADOPAGO_WEBHOOK_URL: ${MERCADOPAGO_WEBHOOK_URL}
     volumes:
       - ./packages/core/src:/app/packages/core/src:ro
     command: npm run dev --workspace=packages/core

@@ -7,6 +7,8 @@ import { JwtModule } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import { ScheduleModule } from '@nestjs/schedule'
 
+import { AdminInitService } from './admin-init.service'
+
 @Module({
   imports: [
     JwtModule.registerAsync({
@@ -20,7 +22,7 @@ import { ScheduleModule } from '@nestjs/schedule'
     ScheduleModule.forRoot(),
   ],
   controllers: [AdminController, AuthController],
-  providers: [AuditService, AdminJwtGuard],
+  providers: [AuditService, AdminJwtGuard, AdminInitService],
   exports: [AuditService, AdminJwtGuard],
 })
 export class AdminModule {}

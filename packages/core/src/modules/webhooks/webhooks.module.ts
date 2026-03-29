@@ -5,9 +5,18 @@ import { InternalEventsModule } from './internal-events.module'
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module'
 import { LicensesModule } from '../licenses/licenses.module'
 import { InvoicesModule } from '../invoices/invoices.module'
+import { SettingsModule } from '../settings/settings.module'
+import { PaymentsModule } from '../payments/payments.module'
 
 @Module({
-  imports: [SubscriptionsModule, LicensesModule, InvoicesModule, InternalEventsModule],
+  imports: [
+    SubscriptionsModule,
+    LicensesModule,
+    InvoicesModule,
+    InternalEventsModule,
+    SettingsModule,
+    PaymentsModule,
+  ],
   controllers: [WebhooksController],
   providers: [
     WebhooksIngestService,

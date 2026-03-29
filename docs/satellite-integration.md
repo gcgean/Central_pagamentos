@@ -1,385 +1,307 @@
 # Guia de Integração — Sistemas Satélites
 
-Este guia explica como qualquer sistema satélite deve se conectar ao Hub Central.
-A integração é deliberadamente simples: o satélite só precisa consumir a API do hub.
+Este documento descreve o padrão oficial para integrar sistemas externos ao Hub Billing com foco em:
+- validação de acesso/licença
+- geração de cobrança
+- acompanhamento de status de pagamento
+- recebimento de confirmações por webhook
 
----
+## Visão geral de arquitetura
 
-## Conceito
-
-```
-Sistema Satélite                    Hub Central
-──────────────────                  ──────────────
-Login do usuário
-  └─ identifica o cliente
-      └─ GET /access/validate  ──▶  consulta licença
-                               ◀──  { allowed, features }
-  └─ libera ou bloqueia acesso
+```text
+Sistema Satélite  ->  Hub Billing API  ->  Gateway (Mercado Pago / Asaas)
+                         |
+                         ->  Webhook de saída (Hub -> Satélite)
 ```
 
-O satélite **nunca** fala diretamente com o gateway de pagamento.
-Toda a lógica financeira fica no hub.
+O sistema satélite não precisa integrar diretamente com gateway de pagamento.
 
----
+## Base URL
 
-## Configuração inicial
-
-### 1. Solicitar API Key
-
-No painel administrativo do hub:
-
+```text
+https://seu-dominio.com/api/v1
 ```
-POST /api/v1/integrations/api-keys
+
+## Autenticação
+
+Existem dois modelos de autenticação:
+
+### 1) API Key (integração de acesso)
+
+Use em endpoints de acesso/licenças para runtime do sistema satélite:
+
+```http
+X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx
+```
+
+### 2) JWT Admin (operações financeiras e de gestão)
+
+Use em endpoints para criar pedido, checkout e consultar cobranças:
+
+```http
+Authorization: Bearer <accessToken>
+```
+
+Login para obter token:
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+
 {
-  "productId": "<uuid-do-seu-produto>",
-  "name": "Produção — Sistema Clínico"
+  "email": "gcgean@hotmail.com",
+  "password": "SUA_SENHA_FORTE"
 }
 ```
 
-Resposta (guarde a `apiKey` — ela só aparece uma vez):
-```json
-{
-  "apiKey": "hub_live_a1b2c3d4e5f6...",
-  "integration": { "id": "...", "name": "Produção — Sistema Clínico" }
-}
+## Fluxo recomendado de integração
+
+1. Gerar API Key por produto no painel em Integrações
+2. Validar acesso no login e em checkpoints críticos usando `GET /access/...`
+3. Quando sem licença, criar pedido e checkout via JWT Admin
+4. Exibir QR Code PIX, link de boleto ou retorno de cartão
+5. Acompanhar status por `GET /payments/charges`
+6. Receber eventos do Hub via webhook de saída para sincronização local
+
+## Endpoints para sistema satélite
+
+### Validar acesso de cliente ao produto
+
+```http
+GET /access/customer/{customerId}/product/{productCode}
+X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx
 ```
 
-### 2. Configurar no sistema satélite
-
-```env
-HUB_API_URL=https://seu-hub.com/api/v1
-HUB_API_KEY=hub_live_a1b2c3d4e5f6...
-HUB_PRODUCT_CODE=erp_clinico
-HUB_WEBHOOK_SECRET=seu-secret-para-validar-eventos
-```
-
----
-
-## Validação de acesso (o mais importante)
-
-Chame este endpoint sempre que um cliente tentar acessar o sistema:
-
-```
-GET /api/v1/access/customer/{customerId}/product/{productCode}
-x-api-key: hub_live_...
-```
-
-### Resposta: acesso liberado
+Resposta de sucesso:
 
 ```json
 {
-  "customerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "productCode": "erp_clinico",
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productCode": "SOFTX_PRO",
   "allowed": true,
+  "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
   "licenseStatus": "active",
-  "planCode": "clinico_pro",
-  "expiresAt": "2026-06-01T23:59:59Z",
+  "planCode": "PRO_MENSAL",
+  "expiresAt": "2026-12-31T23:59:59.000Z",
   "features": {
     "max_users": 10,
-    "reports": true,
-    "api": true
+    "export_pdf": true
   },
-  "checkedAt": "2026-03-22T14:00:00Z"
+  "checkedAt": "2026-03-23T10:00:00.000Z"
 }
 ```
 
-### Resposta: acesso negado
+Resposta negada:
 
 ```json
 {
-  "customerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "productCode": "erp_clinico",
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productCode": "SOFTX_PRO",
   "allowed": false,
   "reason": "license_suspended",
-  "checkedAt": "2026-03-22T14:00:00Z"
+  "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
+  "checkedAt": "2026-03-23T10:00:00.000Z"
 }
 ```
 
-### Valores de `reason`
+### Carregar todos os entitlements do cliente
 
-| Valor | Significado | Ação recomendada |
-|---|---|---|
-| `customer_not_found` | Cliente inexistente no hub | Verificar cadastro |
-| `customer_blocked` | Cliente bloqueado | Contatar suporte |
-| `product_not_found` | Produto não cadastrado | Verificar configuração |
-| `no_license` | Cliente nunca comprou | Redirecionar para checkout |
-| `license_inactive` | Licença inativa | Redirecionar para checkout |
-| `license_suspended` | Inadimplência sem carência | Exibir aviso de pagamento |
-| `grace_period` | Em carência (ainda permite) | Exibir aviso suave |
-| `license_expired` | Licença expirada | Redirecionar para renovação |
-| `license_revoked` | Revogada pelo suporte | Contatar suporte |
-
----
-
-## Exemplo de implementação (Node.js)
-
-```typescript
-// hub-client.ts
-import axios from 'axios'
-
-const hub = axios.create({
-  baseURL: process.env.HUB_API_URL,
-  headers: { 'x-api-key': process.env.HUB_API_KEY },
-  timeout: 5000,
-})
-
-export interface AccessResult {
-  allowed: boolean
-  reason?: string
-  licenseStatus?: string
-  planCode?: string
-  expiresAt?: string | null
-  features?: Record<string, any>
-}
-
-export async function validateAccess(
-  customerId: string,
-  productCode = process.env.HUB_PRODUCT_CODE,
-): Promise<AccessResult> {
-  try {
-    const { data } = await hub.get(
-      `/access/customer/${customerId}/product/${productCode}`
-    )
-    return data
-  } catch (err) {
-    // Em caso de erro na comunicação com o hub, decisão de negócio:
-    // fail-open (permitir) ou fail-close (bloquear)
-    // Recomendado: fail-open com cache local para alta disponibilidade
-    console.error('Erro ao validar acesso no hub:', err.message)
-    return { allowed: false, reason: 'hub_unavailable' }
-  }
-}
-
-// middleware de autenticação no sistema satélite
-export async function requireLicense(req: any, res: any, next: any) {
-  const customerId = req.session?.customerId
-  if (!customerId) return res.redirect('/login')
-
-  const access = await validateAccess(customerId)
-
-  if (!access.allowed) {
-    if (access.reason === 'no_license' || access.reason === 'license_inactive') {
-      return res.redirect('/checkout')
-    }
-    if (access.reason === 'license_suspended') {
-      return res.redirect('/pagamento-pendente')
-    }
-    return res.redirect('/acesso-negado')
-  }
-
-  // Injeta features na request para uso nos controllers
-  req.license = {
-    planCode:   access.planCode,
-    expiresAt:  access.expiresAt,
-    features:   access.features,
-    maxUsers:   access.features?.max_users,
-  }
-
-  // Avisa sobre carência sem bloquear
-  if (access.reason === 'grace_period') {
-    req.licenseWarning = 'Seu acesso está em período de carência. Regularize o pagamento.'
-  }
-
-  next()
-}
+```http
+GET /access/entitlements/{customerId}
+X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx
 ```
 
----
-
-## Carregar todos os produtos de um cliente de uma vez
-
-Para evitar múltiplos requests, use o endpoint de entitlements:
-
-```
-GET /api/v1/access/entitlements/{customerId}
-x-api-key: hub_live_...
-```
+Resposta:
 
 ```json
 {
-  "customerId": "3fa85f64...",
-  "checkedAt": "2026-03-22T14:00:00Z",
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "checkedAt": "2026-03-23T10:00:00.000Z",
   "products": [
     {
-      "productId": "...",
-      "productCode": "erp_clinico",
-      "licenseId": "...",
+      "productId": "111aaa22-bb33-cc44-dd55-ee6677889900",
+      "productCode": "SOFTX_PRO",
+      "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
       "allowed": true,
       "licenseStatus": "active",
-      "expiresAt": "2026-06-01T23:59:59Z",
-      "features": { "max_users": 10, "reports": true }
-    },
-    {
-      "productId": "...",
-      "productCode": "pdv_retail",
-      "licenseId": "...",
-      "allowed": false,
-      "licenseStatus": "suspended"
+      "expiresAt": "2026-12-31T23:59:59.000Z",
+      "features": {
+        "max_users": 10
+      }
     }
   ]
 }
 ```
 
----
+## Endpoints financeiros para integração server-to-server
 
-## Receber eventos do hub (webhooks internos)
+### Criar pedido
 
-Configure a URL de webhook no cadastro do produto no admin.
-O hub enviará um POST para essa URL quando eventos relevantes ocorrerem.
-
-### Configurar endpoint no satélite
-
-```typescript
-// webhook-receiver.ts
-import { createHmac, timingSafeEqual } from 'crypto'
-
-// Valida a assinatura HMAC enviada pelo hub
-function validateHubSignature(rawBody: Buffer, signature: string, secret: string): boolean {
-  const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
-  const received = signature.replace('sha256=', '')
-  return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(received, 'hex'))
-}
-
-app.post('/webhooks/hub', express.raw({ type: 'application/json' }), async (req, res) => {
-  const signature = req.headers['x-hub-signature'] as string
-
-  if (!validateHubSignature(req.body, signature, process.env.HUB_WEBHOOK_SECRET)) {
-    return res.status(401).json({ error: 'Assinatura inválida' })
-  }
-
-  const event = JSON.parse(req.body.toString())
-
-  // Responde imediatamente para evitar timeout
-  res.status(200).json({ received: true })
-
-  // Processa de forma assíncrona
-  await processHubEvent(event)
-})
-
-async function processHubEvent(event: any) {
-  const { type, customerId, productId, payload } = event
-
-  switch (type) {
-    case 'license.activated':
-      // Provisionamento: criar tenant, usuário admin, etc.
-      await provisionCustomer(customerId, payload)
-      break
-
-    case 'license.renewed':
-      // Renovação: atualizar data de expiração no banco local
-      await updateLicenseExpiry(customerId, payload.expiresAt)
-      break
-
-    case 'license.suspended':
-      // Suspensão: bloquear login, notificar usuários
-      await suspendCustomerAccess(customerId, payload.reason)
-      break
-
-    case 'license.reactivated':
-      // Reativação: liberar acesso novamente
-      await reactivateCustomerAccess(customerId)
-      break
-
-    case 'license.revoked':
-      // Revogação definitiva
-      await revokeCustomerAccess(customerId, payload.reason)
-      break
-  }
-}
-```
-
-### Eventos disponíveis
-
-| Evento | Quando dispara |
-|---|---|
-| `license.activated` | Pagamento confirmado, licença emitida |
-| `license.renewed` | Renovação mensal/anual confirmada |
-| `license.suspended` | Inadimplência após carência |
-| `license.reactivated` | Pagamento regularizado |
-| `license.revoked` | Ação administrativa definitiva |
-
----
-
-## Cache para alta disponibilidade
-
-Para evitar que o hub ser a SPOF do seu sistema, implemente cache local:
-
-```typescript
-// cache de 5 minutos — se o hub estiver fora, aceita o cache
-const ACCESS_CACHE_TTL = 5 * 60 * 1000
-
-const cache = new Map<string, { result: AccessResult; expiresAt: number }>()
-
-export async function validateAccessCached(customerId: string): Promise<AccessResult> {
-  const cacheKey = `${customerId}:${process.env.HUB_PRODUCT_CODE}`
-  const cached = cache.get(cacheKey)
-
-  if (cached && Date.now() < cached.expiresAt) {
-    return cached.result
-  }
-
-  const result = await validateAccess(customerId)
-
-  cache.set(cacheKey, {
-    result,
-    expiresAt: Date.now() + ACCESS_CACHE_TTL,
-  })
-
-  return result
-}
-```
-
----
-
-## Buscar ou criar checkout
-
-Quando `allowed: false` e o cliente precisa comprar:
-
-```
-POST /api/v1/orders
-Authorization: Bearer <admin-token>
+```http
+POST /orders
+Authorization: Bearer <accessToken>
+Content-Type: application/json
 
 {
-  "customerId": "3fa85f64...",
-  "productId":  "10000000...",
-  "planId":     "20000000...",
-  "contractedAmount": 19900
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productId": "uuid-do-produto",
+  "planId": "uuid-do-plano",
+  "contractedAmount": 99
 }
 ```
 
-```
-POST /api/v1/orders/{orderId}/checkout
+### Gerar checkout/cobrança do pedido
+
+```http
+POST /orders/{orderId}/checkout
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
 {
   "billingType": "PIX"
 }
 ```
 
-Resposta:
-```json
-{
-  "chargeId": "...",
-  "checkoutUrl": "https://sandbox.asaas.com/i/...",
-  "pixPayload": "00020126...",
-  "pixQrCode": "data:image/png;base64,...",
-  "amount": 19900,
-  "dueDate": "2026-03-25"
-}
-```
-
----
-
-## Verificação de saúde
-
-```
-GET /api/health
-```
+Exemplo cartão:
 
 ```json
 {
-  "status": "ok",
-  "info": {
-    "database": { "status": "up" },
-    "redis":    { "status": "up" }
+  "billingType": "CREDIT_CARD",
+  "installmentCount": 1,
+  "creditCard": {
+    "token": "TOKEN_CARTAO",
+    "paymentMethodId": "master",
+    "issuerId": "24"
   }
 }
 ```
+
+Resposta:
+
+```json
+{
+  "chargeId": "uuid-local-da-cobranca",
+  "externalChargeId": "151589827825",
+  "checkoutUrl": null,
+  "pixQrCode": "data:image/png;base64,...",
+  "pixPayload": "00020126...",
+  "boletoUrl": null,
+  "amount": 99,
+  "currency": "BRL",
+  "dueDate": "2026-03-31"
+}
+```
+
+### Consultar cobranças por origem
+
+```http
+GET /payments/charges?originType=order&originId={orderId}
+Authorization: Bearer <accessToken>
+```
+
+## Webhook de saída (Hub -> sistema satélite)
+
+Configure no produto:
+- `webhook_url`
+- `webhook_secret`
+
+O Hub envia POST com assinatura HMAC:
+
+Headers:
+
+```text
+X-Hub-Signature: sha256=<assinatura_hex>
+X-Hub-Event: payment.approved
+Content-Type: application/json
+```
+
+Payload:
+
+```json
+{
+  "id": "f4dbe7a8-9cc2-41de-8d4d-4cf12531c72a",
+  "type": "payment.approved",
+  "productId": "9a8f0ec4-0a2e-4b52-a66f-96e2fca7b2f4",
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "payload": {
+    "chargeId": "151589827825",
+    "status": "approved",
+    "amount": 99
+  },
+  "createdAt": "2026-03-28T21:27:16.000Z"
+}
+```
+
+Eventos mais comuns:
+- `payment.approved`
+- `payment.failed`
+- `payment.chargeback`
+- `pix.expired`
+- `subscription.canceled`
+
+Validação HMAC:
+
+```ts
+import crypto from 'crypto'
+
+function isValidHubSignature(rawBody: Buffer, signature: string, secret: string): boolean {
+  if (!signature || !secret) return false
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
+  const received = signature.replace('sha256=', '')
+  return expected === received
+}
+```
+
+## Webhook de entrada (Gateway -> Hub)
+
+URLs para configurar no painel do gateway:
+
+```text
+https://seu-dominio.com/api/v1/webhooks/gateway/mercadopago
+https://seu-dominio.com/api/v1/webhooks/gateway/asaas
+```
+
+## Códigos de resposta e erros
+
+### Access API
+- `200`: requisição processada, decidir por `allowed`
+- `401`: API Key ausente/inválida/inativa
+- `422`: parâmetros inválidos
+- `500`: erro interno
+
+### Endpoints administrativos (JWT)
+- `200/201`: sucesso
+- `401`: token inválido/ausente
+- `403`: role sem permissão
+- `404`: recurso não encontrado
+- `422`: payload inválido
+- `500`: erro interno
+
+Reasons de negação de acesso:
+- `customer_not_found`
+- `customer_blocked`
+- `product_not_found`
+- `no_license`
+- `license_inactive`
+- `license_suspended`
+- `grace_period` (allowed pode ser true)
+- `license_expired`
+- `license_revoked`
+
+## Boas práticas de integração
+
+- Usar API Key por sistema e por ambiente
+- Nunca expor segredos em frontend
+- Aplicar cache curto de acesso (10s para negações, 30-60s para acesso liberado)
+- Tratar retries em falhas de rede e `5xx`
+- Processar webhook de forma idempotente no satélite
+- Responder webhook rapidamente e processar assíncrono
+
+## Checklist de Go Live
+
+- API Key criada e salva com segurança
+- Produto correto vinculado ao sistema satélite
+- Fluxo de checkout validado (PIX, boleto, cartão quando aplicável)
+- Webhook de saída configurado e assinatura validada
+- Rotina de reconciliação por `GET /payments/charges` implementada
+- Monitoramento e logs de integração habilitados

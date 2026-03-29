@@ -7,14 +7,18 @@ import { Header } from '@/components/layout/Header'
 import { Spinner } from '@/components/ui/Spinner'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { token, isLoading } = useAuth()
+  const { token, admin, isLoading } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    if (!isLoading && !token) {
-      router.push('/login')
+    if (!isLoading) {
+      if (!token) {
+        router.push('/login')
+      } else if (admin?.mustChangePassword) {
+        router.push('/change-password')
+      }
     }
-  }, [isLoading, token, router])
+  }, [isLoading, token, admin, router])
 
   if (isLoading) {
     return (

@@ -31,7 +31,7 @@ export class InternalEventsService {
         product_id, customer_id, event_type, payload
       ) VALUES (
         ${params.productId}, ${params.customerId},
-        ${params.eventType}, ${JSON.stringify(params.payload)}
+        ${params.eventType}, ${this.sql.json(params.payload as any)}
       )
       RETURNING id
     `

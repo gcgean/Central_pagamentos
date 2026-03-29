@@ -20,7 +20,7 @@ export class WebhookEventsRepository {
         payload, signature_valid
       ) VALUES (
         ${data.gatewayName}, ${data.eventType}, ${data.externalEventId},
-        ${JSON.stringify(data.payload)},
+        ${this.sql.json(data.payload as any)},
         ${data.signatureValid ?? null}
       )
       RETURNING *
@@ -49,7 +49,7 @@ export class WebhookEventsRepository {
       UPDATE webhook_events SET
         processed        = true,
         processed_at     = NOW(),
-        processing_result = ${JSON.stringify(result)}
+        processing_result = ${this.sql.json(result as any)}
       WHERE id = ${id}
     `
   }

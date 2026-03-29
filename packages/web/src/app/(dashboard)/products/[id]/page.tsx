@@ -32,6 +32,7 @@ interface Plan {
   name: string
   amount: number
   interval: string
+  intervalUnit?: string
   intervalCount: number
   maxUsers?: number
   isArchived: boolean
@@ -180,6 +181,7 @@ export default function ProductDetailPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-100">
+                    <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">ID</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Código</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Nome</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Valor</th>
@@ -189,9 +191,14 @@ export default function ProductDetailPage() {
                     <th className="px-6 py-3" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody className="divide-y divide-gray-100">
                   {plans.map((plan) => (
-                    <tr key={plan.id} className="hover:bg-gray-50">
+                    <tr key={plan.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-3 whitespace-nowrap">
+                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded" title={plan.id}>
+                          {plan.id}
+                        </span>
+                      </td>
                       <td className="px-6 py-3">
                         <code className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded font-mono">{plan.code}</code>
                       </td>

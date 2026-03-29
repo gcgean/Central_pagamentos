@@ -36,6 +36,10 @@ export class AdminJwtGuard implements CanActivate {
       throw new UnauthorizedException('Token não autorizado para este endpoint')
     }
 
+    if (payload.mustChangePassword && !request.url.includes('/auth/change-password')) {
+      throw new ForbiddenException('Troca de senha obrigatória pendente')
+    }
+
     request.admin = payload
 
     // Verifica roles se @Roles() foi usado no controller

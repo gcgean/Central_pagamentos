@@ -23,7 +23,7 @@ export class LicensesRepository {
         ${data.expiresAt ?? null},
         ${data.graceUntil ?? null},
         ${data.maxUsers ?? null},
-        ${JSON.stringify(data.featureSet ?? {})}
+        ${data.featureSet ? this.sql.json(data.featureSet as any) : this.sql.json({})}
       )
       RETURNING *
     `

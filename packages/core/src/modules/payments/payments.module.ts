@@ -10,9 +10,10 @@ import { PlansModule } from '../plans/plans.module'
 import { ProductsModule } from '../products/products.module'
 import { CustomersModule } from '../customers/customers.module'
 import { SettingsModule } from '../settings/settings.module'
+import { InvoicesModule } from '../invoices/invoices.module'
 
 @Module({
-  imports: [LicensesModule, PlansModule, ProductsModule, CustomersModule, SettingsModule],
+  imports: [LicensesModule, PlansModule, ProductsModule, CustomersModule, SettingsModule, InvoicesModule],
   controllers: [PaymentsController],
   providers: [
     PaymentsService,

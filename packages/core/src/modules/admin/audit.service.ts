@@ -36,8 +36,8 @@ export class AuditService {
         ${params.action},
         ${params.entityType},
         ${params.entityId},
-        ${params.beforeData ? JSON.stringify(params.beforeData) : null},
-        ${params.afterData ? JSON.stringify(params.afterData) : null},
+        ${params.beforeData ? this.sql.json(params.beforeData as any) : null},
+        ${params.afterData ? this.sql.json(params.afterData as any) : null},
         ${params.ipAddress ?? null},
         ${params.userAgent ?? null},
         ${params.note ?? null}

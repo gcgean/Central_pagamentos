@@ -8,7 +8,6 @@ import { PlansService } from '../plans/plans.service'
 import { ProductsService } from '../products/products.service'
 import { SettingsService } from '../settings/settings.service'
 import dayjs from 'dayjs'
-import { randomUUID } from 'crypto'
 
 export interface CreateCheckoutParams {
   customerId: string
@@ -55,10 +54,6 @@ export class CheckoutService {
 
     this.logger.log(`Checkout via gateway: ${activeGateway}`)
 
-    if (activeGateway === 'mock') {
-      return this.createMockCheckout(params, plan, product)
-    }
-
     if (activeGateway === 'mercadopago') {
       return this.createMercadoPagoCheckout(params, plan, product, customer, gwConfig)
     }
@@ -97,6 +92,9 @@ export class CheckoutService {
       billingType:      params.billingType as any,
       externalReference: `${params.originType}:${params.originId}`,
       installments:     params.installmentCount,
+      cardToken:        params.creditCard?.token,
+      cardPaymentMethodId: params.creditCard?.paymentMethodId || 'master', // Fallback opcional, mas no MP ideal é vir
+      cardIssuerId:     params.creditCard?.issuerId,
       boletoDueDate:    params.billingType === 'BOLETO' ? dueDate : undefined,
     })
 
@@ -209,53 +207,6 @@ export class CheckoutService {
       boletoUrl:        charge.bankSlipUrl ?? null,
       amount:           plan.amount,
       currency:         plan.currency,
-      dueDate,
-    }
-  }
-
-  // ── Mock ─────────────────────────────────────────────────────────────────────
-
-  private async createMockCheckout(params: CreateCheckoutParams, plan: any, _product: any) {
-    const dueDate      = params.dueDate ?? dayjs().add(3, 'day').format('YYYY-MM-DD')
-    const fakeChargeId = `mock_${randomUUID()}`
-    const checkoutUrl  = `https://checkout.exemplo.com/pay/${fakeChargeId}`
-
-    const pixQrCodeBase64 = params.billingType === 'PIX'
-      ? 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-      : undefined
-    const pixPayload = params.billingType === 'PIX'
-      ? `00020126580014BR.GOV.BCB.PIX0136${randomUUID()}5204000053039865406${(plan.amount / 100).toFixed(2)}5802BR5913Mock Payment6008Brasilia62070503***6304MOCK`
-      : undefined
-
-    const invoice     = await this.repo.findInvoiceByOrigin(params.originType, params.originId)
-    const localCharge = await this.repo.createCharge({
-      invoiceId:        invoice.id,
-      customerId:       params.customerId,
-      amount:           plan.amount,
-      currency:         plan.currency ?? 'BRL',
-      paymentMethod:    params.billingType.toLowerCase() as any,
-      gatewayName:      'mock',
-      externalChargeId: fakeChargeId,
-      checkoutUrl,
-      pixQrCode:        pixQrCodeBase64,
-      pixExpiresAt:     params.billingType === 'PIX' ? dayjs().add(24, 'hour').toDate() : undefined,
-      boletoUrl:        params.billingType === 'BOLETO' ? checkoutUrl : undefined,
-      installmentCount: params.installmentCount ?? 1,
-      attemptNumber:    1,
-      maxAttempts:      3,
-    })
-
-    this.logger.log(`[MOCK] Checkout simulado: charge ${localCharge.id}`)
-
-    return {
-      chargeId:         localCharge.id,
-      externalChargeId: fakeChargeId,
-      checkoutUrl,
-      pixQrCode:        pixQrCodeBase64 ?? null,
-      pixPayload:       pixPayload ?? null,
-      boletoUrl:        params.billingType === 'BOLETO' ? checkoutUrl : null,
-      amount:           plan.amount,
-      currency:         plan.currency ?? 'BRL',
       dueDate,
     }
   }

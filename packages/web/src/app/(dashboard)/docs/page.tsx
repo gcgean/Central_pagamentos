@@ -140,6 +140,7 @@ const navItems = [
   { id: 'auth',          label: 'Autenticação' },
   { id: 'access',        label: 'Verificar Acesso' },
   { id: 'entitlements',  label: 'Entitlements' },
+  { id: 'payments',      label: 'Pagamentos' },
   { id: 'webhooks',      label: 'Webhooks de Saída' },
   { id: 'webhook-in',    label: 'Webhooks de Entrada' },
   { id: 'errors',        label: 'Erros & Motivos' },
@@ -270,6 +271,30 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
           <CodeBlock language="bash" code={`# .env do seu sistema
 HUB_BILLING_API_KEY=hub_live_xxxxxxxxxxxxxxxxxxxx
 HUB_BILLING_BASE_URL=https://billing.seudominio.com/api/v1`} />
+
+          <h3 className="font-semibold text-gray-900 mt-6 mb-2">Autenticação de gestão (JWT Admin)</h3>
+          <p className="text-sm text-gray-600">
+            Para criar pedidos, gerar cobranças e consultar status financeiro, use token JWT de admin.
+            Esse fluxo é recomendado para integrações server-to-server de ERP/CRM.
+          </p>
+          <CodeBlock language="http" code={`POST /api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "gcgean@hotmail.com",
+  "password": "SUA_SENHA_FORTE"
+}
+
+HTTP/1.1 200
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "admin": {
+    "id": "uuid",
+    "role": "super_admin",
+    "mustChangePassword": false
+  }
+}`} />
+          <CodeBlock language="http" code={`Authorization: Bearer <accessToken>`} />
         </Section>
 
         {/* ── VERIFICAR ACESSO ─────────────────────────────────────────────── */}
@@ -401,16 +426,83 @@ async function loadUserProfile(customerId) {
 }`} />
         </Section>
 
-        {/* ── WEBHOOKS DE SAÍDA ────────────────────────────────────────────── */}
-        <Section id="webhooks" title="Webhooks de Saída (Hub → Seu Sistema)" icon={<Webhook size={16} />}>
+        <Section id="payments" title="Processamento de Pagamentos" icon={<ExternalLink size={16} />}>
           <p className="text-sm text-gray-600 mb-4">
-            <em>(Em desenvolvimento)</em> O Hub Billing poderá notificar proativamente seu sistema quando eventos
-            importantes ocorrerem — pagamento confirmado, licença suspensa, assinatura cancelada, etc.
+            Fluxo recomendado para sistemas externos que precisam processar cobrança:
+            <strong> criar pedido/assinatura → gerar checkout → acompanhar status da cobrança → receber confirmação via webhook</strong>.
           </p>
 
-          <Alert type="warning">
-            Esta funcionalidade está planejada para a próxima versão. Por enquanto, use a estratégia de
-            <strong> polling</strong> no endpoint de acesso ou configure webhooks internos via fila.
+          <Endpoint
+            method="POST"
+            path="/orders"
+            description="Cria pedido avulso para cobrança one-time"
+          >
+            <PropTable rows={[
+              { name: 'customerId', type: 'uuid', required: true, description: 'ID do cliente no Hub Billing' },
+              { name: 'productId', type: 'uuid', required: true, description: 'ID do produto' },
+              { name: 'planId', type: 'uuid', required: true, description: 'ID do plano contratado' },
+              { name: 'contractedAmount', type: 'number', required: true, description: 'Valor em centavos (ex: 9900 = R$ 99,00)' },
+            ]} />
+            <CodeBlock language="json" code={`{
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productId": "uuid-do-produto",
+  "planId": "uuid-do-plano",
+  "contractedAmount": 99
+}`} />
+          </Endpoint>
+
+          <Endpoint
+            method="POST"
+            path="/orders/{orderId}/checkout"
+            description="Gera cobrança PIX, cartão ou boleto para o pedido"
+          >
+            <PropTable rows={[
+              { name: 'billingType', type: `'PIX' | 'CREDIT_CARD' | 'BOLETO' | 'UNDEFINED'`, required: true, description: 'Método de pagamento' },
+              { name: 'installmentCount', type: 'number', required: false, description: 'Parcelas (cartão)' },
+              { name: 'creditCard.token', type: 'string', required: false, description: 'Token do cartão (Mercado Pago.js/Asaas)' },
+              { name: 'creditCard.paymentMethodId', type: 'string', required: false, description: 'Bandeira do cartão (ex: visa/master)' },
+              { name: 'creditCard.issuerId', type: 'string', required: false, description: 'ID do emissor (quando aplicável)' },
+            ]} />
+            <CodeBlock language="json" code={`{
+  "billingType": "PIX"
+}`} />
+            <CodeBlock language="json" code={`{
+  "chargeId": "uuid-local-da-cobranca",
+  "externalChargeId": "151589827825",
+  "checkoutUrl": null,
+  "pixQrCode": "data:image/png;base64,...",
+  "pixPayload": "00020126...",
+  "boletoUrl": null,
+  "amount": 99,
+  "currency": "BRL",
+  "dueDate": "2026-03-31"
+}`} />
+          </Endpoint>
+
+          <Endpoint
+            method="GET"
+            path="/payments/charges?originType=order|subscription&originId={id}"
+            description="Consulta as cobranças já criadas para um pedido/assinatura"
+          >
+            <CodeBlock language="http" code={`GET /api/v1/payments/charges?originType=order&originId=d8912ff9-9d06-4ab1-88b2-50d64f61b12
+Authorization: Bearer <accessToken>`} />
+          </Endpoint>
+
+          <Alert type="info">
+            Os endpoints de cobrança usam <strong>Authorization: Bearer</strong> (JWT admin), enquanto os endpoints de validação
+            de acesso usam <strong>X-API-Key</strong>.
+          </Alert>
+        </Section>
+
+        <Section id="webhooks" title="Webhooks de Saída (Hub → Seu Sistema)" icon={<Webhook size={16} />}>
+          <p className="text-sm text-gray-600 mb-4">
+            Funcionalidade ativa. O Hub entrega eventos para a <strong>webhook_url do produto</strong> quando há mudanças
+            de cobrança/licença. A assinatura é enviada no header <code className="font-mono text-xs">X-Hub-Signature</code>.
+          </p>
+
+          <Alert type="info">
+            Configure no cadastro do produto: <strong>webhook_url</strong> e <strong>webhook_secret</strong>. O Hub assina
+            o body com HMAC SHA-256 usando esse segredo.
           </Alert>
 
           <h3 className="font-semibold text-gray-900 mt-5 mb-3">Eventos que serão notificados</h3>
@@ -424,14 +516,11 @@ async function loadUserProfile(customerId) {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {[
-                  ['license.activated',  'Licença ativada após pagamento confirmado'],
-                  ['license.suspended',  'Licença suspensa por inadimplência'],
-                  ['license.renewed',    'Licença renovada por nova cobrança aprovada'],
-                  ['license.revoked',    'Licença revogada manualmente pelo admin'],
-                  ['subscription.canceled', 'Assinatura cancelada (pelo cliente ou gateway)'],
-                  ['payment.confirmed',  'Pagamento PIX/boleto/cartão aprovado'],
-                  ['payment.failed',     'Tentativa de cobrança recusada'],
-                  ['payment.chargeback', 'Chargeback registrado'],
+                  ['payment.approved',  'Pagamento confirmado no gateway'],
+                  ['payment.failed',    'Pagamento recusado/falhou no gateway'],
+                  ['payment.chargeback','Chargeback detectado'],
+                  ['pix.expired',       'Cobrança PIX expirada'],
+                  ['subscription.canceled', 'Assinatura cancelada no gateway'],
                 ].map(([event, desc], i) => (
                   <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 font-mono text-blue-700 text-xs">{event}</td>
@@ -446,19 +535,31 @@ async function loadUserProfile(customerId) {
           <CodeBlock language="json" code={`POST https://seu-sistema.com/webhooks/hub-billing
 
 {
-  "event": "license.activated",
-  "timestamp": "2026-03-23T10:00:00.000Z",
-  "data": {
-    "customerId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    "productCode": "SOFTX_PRO",
-    "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
-    "expiresAt": "2026-12-31T23:59:59.000Z",
-    "features": { "max_users": 10 }
-  }
+  "id": "f4dbe7a8-9cc2-41de-8d4d-4cf12531c72a",
+  "type": "payment.approved",
+  "productId": "9a8f0ec4-0a2e-4b52-a66f-96e2fca7b2f4",
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "payload": {
+    "chargeId": "151589827825",
+    "status": "approved",
+    "amount": 99
+  },
+  "createdAt": "2026-03-28T21:27:16.000Z"
 }
 
-// Header de segurança (HMAC-SHA256):
-X-Hub-Signature: sha256=abc123...`} />
+// Headers:
+X-Hub-Signature: sha256=abc123...
+X-Hub-Event: payment.approved`} />
+
+          <h3 className="font-semibold text-gray-900 mt-5 mb-3">Validação da assinatura</h3>
+          <CodeBlock language="javascript" code={`import crypto from 'crypto'
+
+function isValidHubSignature(rawBody, signature, secret) {
+  if (!signature || !secret) return false
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
+  const received = String(signature).replace('sha256=', '')
+  return expected === received
+}`} />
         </Section>
 
         {/* ── WEBHOOKS DE ENTRADA ──────────────────────────────────────────── */}
@@ -537,9 +638,9 @@ X-Hub-Signature: sha256=abc123...`} />
           <PropTable rows={[
             { name: '200', type: 'OK',          description: 'Requisição processada. Verifique o campo allowed.' },
             { name: '401', type: 'Unauthorized', description: 'API Key ausente, inválida ou revogada.' },
-            { name: '403', type: 'Forbidden',    description: 'A API Key não tem acesso a este produto.' },
-            { name: '422', type: 'Unprocessable', description: 'UUID inválido ou parâmetros malformados.' },
-            { name: '429', type: 'Too Many Requests', description: 'Limite de 300 req/min excedido. Use cache.' },
+            { name: '403', type: 'Forbidden',    description: 'Token JWT sem permissão para o endpoint administrativo.' },
+            { name: '404', type: 'Not Found', description: 'Recurso não encontrado (pedido, assinatura, cliente, produto).' },
+            { name: '422', type: 'Unprocessable', description: 'UUID inválido, documento inválido ou payload malformado.' },
             { name: '500', type: 'Server Error', description: 'Erro interno. Tente novamente em alguns segundos.' },
           ]} />
         </Section>
