@@ -57,6 +57,8 @@ const failedReasonFriendly: Record<string, string> = {
   cc_rejected_bad_filled_security_code: 'CVV inválido',
   cc_rejected_bad_filled_date: 'Validade inválida',
   cc_rejected_call_for_authorize: 'Banco emissor negou, contate o banco',
+  cc_rejected_high_risk: 'Pagamento recusado por política de risco',
+  cc_rejected_other_reason: 'Pagamento recusado pelo emissor',
 }
 
 function getFailedReasonMessage(reason?: string | null) {
