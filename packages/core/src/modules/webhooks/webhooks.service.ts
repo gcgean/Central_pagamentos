@@ -131,7 +131,7 @@ export class WebhookProcessorService extends WorkerHost {
       case 'payment.declined':
         await this.invoices.markFailed(
           String(payload?.chargeId ?? payload?.data?.id ?? payload?.charge?.id),
-          payload?.reason ?? payload?.status_detail ?? 'Falha no pagamento',
+          payload?.charge?.status_detail ?? payload?.status_detail ?? payload?.reason ?? 'Falha no pagamento',
         )
         break
 

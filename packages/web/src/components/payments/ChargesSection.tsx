@@ -27,6 +27,7 @@ interface Charge {
   installment_count: number
   attempt_number: number
   paid_at: string | null
+  failed_reason?: string | null
   created_at: string
 }
 
@@ -49,7 +50,19 @@ const statusLabel: Record<string, string> = {
 const methodLabel: Record<string, string> = {
   pix:         'PIX',
   credit_card: 'Cartão',
-  boleto:      'Boleto',
+}
+
+const failedReasonFriendly: Record<string, string> = {
+  cc_rejected_insufficient_amount: 'Limite insuficiente',
+  cc_rejected_bad_filled_security_code: 'CVV inválido',
+  cc_rejected_bad_filled_date: 'Validade inválida',
+  cc_rejected_call_for_authorize: 'Banco emissor negou, contate o banco',
+}
+
+function getFailedReasonMessage(reason?: string | null) {
+  if (!reason) return 'Pagamento recusado'
+  const normalized = reason.trim()
+  return failedReasonFriendly[normalized] ?? normalized
 }
 
 interface Props {
@@ -213,6 +226,11 @@ export function ChargesSection({ originType, originId }: Props) {
                   #{charge.attempt_number} · {charge.gateway_name}
                 </span>
               </div>
+              {charge.status === 'failed' && (
+                <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-md px-2 py-1 inline-block">
+                  Motivo: {getFailedReasonMessage(charge.failed_reason)}
+                </p>
+              )}
             </div>
           ))}
         </div>
