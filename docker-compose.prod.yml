@@ -1,0 +1,84 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hub_billing_postgres_prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./packages/database/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/00_init.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hub_billing_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: hub_billing_redis_prod
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - hub_billing_net
+
+  api:
+    build:
+      context: .
+      dockerfile: packages/core/Dockerfile
+    container_name: hub_billing_api_prod
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      APP_PORT: 3005
+      APP_URL: https://pagamentos.baselider.com.br
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: https://pagamentos.baselider.com.br
+    ports:
+      - '127.0.0.1:3005:3005'
+    networks:
+      - hub_billing_net
+
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    container_name: hub_billing_web_prod
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      API_INTERNAL_ORIGIN: http://api:3005
+    ports:
+      - '127.0.0.1:3004:3004'
+    networks:
+      - hub_billing_net
+
+networks:
+  hub_billing_net:
+    driver: bridge
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:

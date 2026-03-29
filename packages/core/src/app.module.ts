@@ -16,6 +16,7 @@ import { IntegrationsModule } from './modules/integrations/integrations.module'
 import { AdminModule } from './modules/admin/admin.module'
 import { AccessModule } from './modules/access/access.module'
 import { SettingsModule } from './modules/settings/settings.module'
+import { HealthModule } from './modules/health/health.module'
 import { DatabaseModule } from './shared/database/database.module'
 import { QueueModule } from './shared/queue/queue.module'
 
@@ -50,6 +51,7 @@ import { QueueModule } from './shared/queue/queue.module'
     AdminModule,
     AccessModule,
     SettingsModule,
+    HealthModule,
   ],
 })
 export class AppModule {}
