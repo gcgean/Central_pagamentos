@@ -42,7 +42,10 @@
       "Bash(powershell.exe -Command \"Get-Service -Name ''*postgres*'' -ErrorAction SilentlyContinue | Select-Object Name, Status, DisplayName\")",
       "Bash(powershell.exe -Command \"Get-Service | Where-Object { $_.DisplayName -like ''*sql*'' -or $_.DisplayName -like ''*postgres*'' -or $_.Name -like ''*pg*'' } | Select-Object Name, Status, DisplayName\")",
       "Bash(powershell.exe -Command \"netstat -ano | findstr '''':5432''''\")",
-      "Bash(powershell.exe -Command \"netstat -ano | findstr ''''LISTEN''''\")"
+      "Bash(powershell.exe -Command \"netstat -ano | findstr ''''LISTEN''''\")",
+      "Bash(wc -l \"C:\\\\Projetos Web\\\\Central_pagamentos\\\\packages\\\\web\\\\src\\\\app\\\\\\(dashboard\\)\\\\docs\\\\page.tsx\")",
+      "Bash(node_modules/.bin/tsc --noEmit --skipLibCheck)",
+      "Bash(node node_modules/.bin/tsc --project packages/web/tsconfig.json --noEmit --skipLibCheck)"
     ]
   }
 }

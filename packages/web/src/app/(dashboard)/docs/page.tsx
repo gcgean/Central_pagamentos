@@ -138,7 +138,11 @@ function Alert({ type, children }: { type: 'info' | 'warning' | 'success'; child
 const navItems = [
   { id: 'overview',      label: 'Visão Geral' },
   { id: 'auth',          label: 'Autenticação' },
-  { id: 'access',        label: 'Verificar Acesso' },
+  { id: 'resolve',       label: 'Resolve Acesso' },
+  { id: 'status',        label: 'Status de Acesso' },
+  { id: 'trial',         label: 'Regras de Trial' },
+  { id: 'customers-ext', label: 'Clientes Externos' },
+  { id: 'access',        label: 'Validação Legada' },
   { id: 'entitlements',  label: 'Entitlements' },
   { id: 'payments',      label: 'Pagamentos' },
   { id: 'webhooks',      label: 'Webhooks de Saída' },
@@ -297,11 +301,372 @@ HTTP/1.1 200
           <CodeBlock language="http" code={`Authorization: Bearer <accessToken>`} />
         </Section>
 
-        {/* ── VERIFICAR ACESSO ─────────────────────────────────────────────── */}
-        <Section id="access" title="Verificar Acesso" icon={<ShieldCheck size={16} />}>
+        {/* ── RESOLVE ACESSO ───────────────────────────────────────────────── */}
+        <Section id="resolve" title="Resolve Acesso (Onboarding)" icon={<ShieldCheck size={16} />}>
+          <Alert type="success">
+            Este é o <strong>ponto de entrada principal</strong> para sistemas satélites. Chame este endpoint
+            no login do usuário — ele cria o cliente se necessário, inicia trial automaticamente e
+            retorna a decisão de acesso completa.
+          </Alert>
+
+          <p className="text-sm text-gray-600 mt-4 mb-4">
+            O endpoint é <strong>idempotente</strong>: chamadas repetidas com o mesmo documento retornam
+            o mesmo estado sem criar duplicidades.
+          </p>
+
+          <Endpoint
+            method="POST"
+            path="/access/resolve"
+            description="Onboarding centralizado — resolve cliente, trial e licença"
+          >
+            <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Corpo da requisição</h4>
+            <PropTable rows={[
+              { name: 'document',   type: 'string',   required: true,  description: 'CPF ou CNPJ (formatado ou só dígitos)' },
+              { name: 'personType', type: '"PF"|"PJ"', required: true,  description: 'Tipo de pessoa' },
+              { name: 'productId',  type: 'uuid',     required: true,  description: 'ID do produto no Hub' },
+              { name: 'name',       type: 'string',   required: true,  description: 'Nome completo ou Razão Social' },
+              { name: 'email',      type: 'string',   required: true,  description: 'E-mail do cliente' },
+            ]} />
+
+            <CodeBlock language="http" code={`POST /api/v1/access/resolve
+X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx
+Content-Type: application/json
+
+{
+  "document": "123.456.789-09",
+  "personType": "PF",
+  "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "Maria Oliveira",
+  "email": "maria@exemplo.com.br"
+}`} />
+
+            <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Resposta — Trial iniciado (primeiro acesso)</h4>
+            <CodeBlock language="json" code={`{
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
+  "accessStatus": "trial",
+  "trialStartedAt": "2026-03-29T10:00:00.000Z",
+  "trialEndAt": "2026-04-12T10:00:00.000Z",
+  "licenseEndAt": null,
+  "daysLeft": 14,
+  "canAccess": true,
+  "banner": "Bem-vindo! Você tem 14 dias de avaliação gratuita."
+}`} />
+
+            <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Resposta — Licença paga ativa</h4>
+            <CodeBlock language="json" code={`{
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
+  "accessStatus": "licensed",
+  "trialStartedAt": null,
+  "trialEndAt": null,
+  "licenseEndAt": "2026-12-31T23:59:59.000Z",
+  "daysLeft": 276,
+  "canAccess": true,
+  "banner": null
+}`} />
+
+            <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Resposta — Trial expirado (bloqueado)</h4>
+            <CodeBlock language="json" code={`{
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
+  "accessStatus": "blocked",
+  "trialStartedAt": null,
+  "trialEndAt": "2026-03-22T10:00:00.000Z",
+  "licenseEndAt": null,
+  "daysLeft": null,
+  "canAccess": false,
+  "banner": "Seu período de avaliação expirou. Adquira uma licença para continuar."
+}`} />
+
+            <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Valores possíveis para accessStatus</h4>
+            <div className="overflow-x-auto my-3">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="text-left px-3 py-2 font-semibold text-gray-700 rounded-tl-lg">accessStatus</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-700">canAccess</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-700 rounded-tr-lg">Descrição</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ['trial',      'true',  'Em período de avaliação gratuita'],
+                    ['licensed',   'true',  'Licença paga ativa (ou em carência)'],
+                    ['blocked',    'false', 'Trial expirado, suspensão ou bloqueio manual'],
+                    ['no_license', 'false', 'Produto sem trial configurado e sem licença'],
+                  ].map(([status, access, desc], i) => (
+                    <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-3 py-2 font-mono text-blue-700 font-medium">{status}</td>
+                      <td className="px-3 py-2 font-mono text-purple-600">{access}</td>
+                      <td className="px-3 py-2 text-gray-600">{desc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <Alert type="info">
+              Sempre verifique <code className="font-mono text-xs">canAccess</code> para liberar ou bloquear o sistema.
+              Use o campo <code className="font-mono text-xs">banner</code> para exibir a mensagem pronta ao usuário quando não nulo.
+            </Alert>
+          </Endpoint>
+
+          <h3 className="font-semibold text-gray-900 mt-5 mb-3">Lógica recomendada no login</h3>
+          <CodeBlock language="typescript" code={`// No login do usuário no seu sistema
+async function onUserLogin(document: string, name: string, email: string) {
+  const res = await fetch(\`\${HUB_URL}/access/resolve\`, {
+    method: 'POST',
+    headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      document,
+      personType: 'PF',
+      productId: process.env.HUB_PRODUCT_ID,
+      name,
+      email,
+    }),
+  })
+  const data = await res.json()
+
+  if (!data.canAccess) {
+    // Redireciona para tela de conversão/compra
+    return redirect(\`/planos?reason=\${data.accessStatus}\`)
+  }
+
+  // Armazena na sessão para consultas futuras
+  session.hubCustomerId = data.customerId
+  session.accessStatus  = data.accessStatus
+  session.banner        = data.banner  // exibir se não null
+
+  return data
+}`} />
+        </Section>
+
+        {/* ── STATUS DE ACESSO ──────────────────────────────────────────────── */}
+        <Section id="status" title="Status de Acesso (Consulta Periódica)" icon={<Zap size={16} />}>
           <p className="text-sm text-gray-600 mb-4">
-            O endpoint principal de integração. Informe o ID do cliente e o código do produto para saber
-            instantaneamente se o acesso deve ser liberado.
+            Consulta o estado atual de acesso de um cliente para um produto.
+            Use este endpoint para verificações periódicas após o login.{' '}
+            <strong>Não cria clientes nem inicia trials</strong> — apenas informa o estado.
+          </p>
+
+          <Endpoint
+            method="GET"
+            path="/access/status?customerId={id}&productId={id}"
+            description="Consulta status atual de acesso por customer + product"
+          >
+            <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Parâmetros de query</h4>
+            <PropTable rows={[
+              { name: 'customerId', type: 'uuid', required: true, description: 'ID do cliente no Hub Billing' },
+              { name: 'productId',  type: 'uuid', required: true, description: 'ID do produto no Hub Billing' },
+            ]} />
+
+            <CodeBlock language="http" code={`GET /api/v1/access/status?customerId=2db2626d-...&productId=a1b2c3d4-...
+X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
+
+            <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Resposta — Trial ativo</h4>
+            <CodeBlock language="json" code={`{
+  "accessStatus": "trial",
+  "canAccess": true,
+  "trialEndAt": "2026-04-12T10:00:00.000Z",
+  "licenseEndAt": null,
+  "daysLeft": 10,
+  "reason": "trial_active",
+  "banner": "Você está no período de avaliação gratuita. Restam 10 dias."
+}`} />
+
+            <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Resposta — Licença em carência</h4>
+            <CodeBlock language="json" code={`{
+  "accessStatus": "licensed",
+  "canAccess": true,
+  "trialEndAt": null,
+  "licenseEndAt": "2026-04-05T23:59:59.000Z",
+  "daysLeft": 3,
+  "reason": "grace_period",
+  "banner": "Seu acesso está em carência. Regularize o pagamento. Restam 3 dia(s)."
+}`} />
+
+            <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Valores possíveis para reason</h4>
+            <div className="overflow-x-auto my-3">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="text-left px-3 py-2 font-semibold text-gray-700 rounded-tl-lg">reason</th>
+                    <th className="text-left px-3 py-2 font-semibold text-gray-700 rounded-tr-lg">Descrição</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ['trial_active',       'Trial em andamento'],
+                    ['trial_expired',      'Trial encerrado sem conversão'],
+                    ['licensed',           'Licença paga ativa'],
+                    ['grace_period',       'Dentro do período de carência após vencimento'],
+                    ['license_suspended',  'Suspensa por inadimplência'],
+                    ['license_revoked',    'Revogada manualmente pelo admin'],
+                    ['no_license',         'Nenhum vínculo encontrado'],
+                    ['customer_not_found', 'Cliente não existe no Hub'],
+                    ['customer_blocked',   'Cliente bloqueado'],
+                    ['product_not_found',  'Produto não encontrado'],
+                  ].map(([reason, desc], i) => (
+                    <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-3 py-2 font-mono text-red-600 text-xs font-medium">{reason}</td>
+                      <td className="px-3 py-2 text-gray-600">{desc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Endpoint>
+        </Section>
+
+        {/* ── REGRAS DE TRIAL ──────────────────────────────────────────────── */}
+        <Section id="trial" title="Regras de Trial" icon={<Key size={16} />}>
+          <p className="text-sm text-gray-600 mb-4">
+            O trial é gerenciado <strong>exclusivamente pelo Hub</strong>. O sistema satélite não arbitra nem controla
+            o período de avaliação — apenas exibe a resposta recebida.
+          </p>
+
+          <div className="space-y-3 mb-5">
+            {[
+              { title: 'Uma vez por produto', desc: 'O trial é concedido apenas uma vez por customer + product. Tentativas subsequentes retornam o estado existente sem criar novo trial.' },
+              { title: 'Configurado no produto', desc: 'A duração é definida no campo trial_days do produto. 0 = sem trial. Cada produto pode ter um período diferente.' },
+              { title: 'Início automático', desc: 'Iniciado automaticamente no primeiro POST /access/resolve elegível. Não requer ação manual.' },
+              { title: 'Fonte única de verdade', desc: 'O Hub é o único sistema que decide se o trial está ativo, expirado ou nunca concedido.' },
+            ].map((item, i) => (
+              <div key={i} className="flex gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-1.5" />
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">{item.title}</p>
+                  <p className="text-sm text-gray-600 mt-0.5">{item.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="font-semibold text-gray-900 mb-3">Configuração por produto</h3>
+          <div className="overflow-x-auto mb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="text-left px-3 py-2 font-semibold text-gray-700 rounded-tl-lg">Produto</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-700">trial_days</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-700 rounded-tr-lg">Comportamento</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ['CRM Pro',        '15', 'Inicia trial de 15 dias no primeiro acesso'],
+                  ['PDV Retail',     '7',  'Inicia trial de 7 dias no primeiro acesso'],
+                  ['ERP Clínico',    '30', 'Inicia trial de 30 dias no primeiro acesso'],
+                  ['Sem trial',      '0',  'Retorna no_license se não houver licença paga'],
+                ].map(([prod, days, behavior], i) => (
+                  <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 font-medium text-gray-800">{prod}</td>
+                    <td className="px-3 py-2 font-mono text-purple-600">{days}</td>
+                    <td className="px-3 py-2 text-gray-600">{behavior}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h3 className="font-semibold text-gray-900 mb-3">Fluxo de decisão do resolve</h3>
+          <CodeBlock language="text" code={`POST /access/resolve
+         │
+         ├─ Documento inválido → blocked (sem criar nada)
+         │
+         ├─ Localiza ou cria cliente pelo CPF/CNPJ
+         │
+         ├─ Cliente bloqueado → blocked
+         │
+         ├─ Licença paga ativa → licensed ✓
+         │
+         ├─ Licença paga em carência → licensed ✓ (com banner)
+         │
+         ├─ Licença trial ativa → trial ✓
+         │
+         ├─ Trial já usado (expirado) → blocked (trial_expired)
+         │
+         ├─ Sem trial e produto tem trial_days > 0
+         │    └─ Inicia trial → trial ✓ (banner de boas-vindas)
+         │
+         └─ Sem trial e trial_days = 0 → no_license`} />
+        </Section>
+
+        {/* ── CLIENTES EXTERNOS ────────────────────────────────────────────── */}
+        <Section id="customers-ext" title="Clientes Externos" icon={<Code2 size={16} />}>
+          <p className="text-sm text-gray-600 mb-4">
+            Endpoints auxiliares para verificar a existência de um cliente ou criá-lo de forma
+            idempotente, sem iniciar trial ou verificar licença.
+          </p>
+
+          <Endpoint
+            method="GET"
+            path="/access/customers/resolve?document={doc}"
+            description="Verifica se um cliente existe pelo CPF/CNPJ ou e-mail"
+          >
+            <PropTable rows={[
+              { name: 'document', type: 'string', required: false, description: 'CPF ou CNPJ (ao menos um dos dois)' },
+              { name: 'email',    type: 'string', required: false, description: 'E-mail (ao menos um dos dois)' },
+            ]} />
+            <CodeBlock language="http" code={`GET /api/v1/access/customers/resolve?document=12345678909
+X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
+            <CodeBlock language="json" code={`{
+  "exists": true,
+  "source": "existing",
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9"
+}`} />
+            <p className="text-sm text-gray-600 mt-2">Quando não encontrado: <code className="font-mono text-xs bg-gray-100 px-1 rounded">{`{"exists": false, "source": "existing", "customerId": null}`}</code></p>
+          </Endpoint>
+
+          <Endpoint
+            method="POST"
+            path="/access/customers/upsert"
+            description="Cria cliente de forma idempotente (não duplica por documento)"
+          >
+            <PropTable rows={[
+              { name: 'personType',      type: '"PF"|"PJ"', required: true,  description: 'Tipo de pessoa' },
+              { name: 'document',        type: 'string',    required: true,  description: 'CPF ou CNPJ' },
+              { name: 'legalName',       type: 'string',    required: true,  description: 'Nome ou Razão Social' },
+              { name: 'email',           type: 'string',    required: true,  description: 'E-mail' },
+              { name: 'phone',           type: 'string',    required: false, description: 'Telefone' },
+              { name: 'addressZip',      type: 'string',    required: false, description: 'CEP' },
+              { name: 'addressStreet',   type: 'string',    required: false, description: 'Logradouro' },
+              { name: 'addressNumber',   type: 'string',    required: false, description: 'Número' },
+              { name: 'addressDistrict', type: 'string',    required: false, description: 'Bairro' },
+              { name: 'addressCity',     type: 'string',    required: false, description: 'Cidade' },
+              { name: 'addressState',    type: 'string',    required: false, description: 'UF (2 letras)' },
+            ]} />
+            <CodeBlock language="json" code={`{
+  "personType": "PJ",
+  "document": "12.345.678/0001-90",
+  "legalName": "Empresa Exemplo LTDA",
+  "email": "financeiro@empresa.com.br",
+  "phone": "(11) 99999-9999",
+  "addressZip": "60000-000",
+  "addressCity": "Fortaleza",
+  "addressState": "CE"
+}`} />
+            <CodeBlock language="json" code={`// Criado com sucesso
+{ "exists": true, "source": "created", "customerId": "uuid..." }
+
+// Já existia (idempotente)
+{ "exists": true, "source": "existing", "customerId": "uuid..." }`} />
+          </Endpoint>
+        </Section>
+
+        {/* ── VERIFICAR ACESSO (legado) ─────────────────────────────────────── */}
+        <Section id="access" title="Validação Legada (por productCode)" icon={<ShieldCheck size={16} />}>
+          <Alert type="warning">
+            Endpoint mantido para retrocompatibilidade. Para novos sistemas, use{' '}
+            <strong>POST /access/resolve</strong> que suporta trial, onboarding e controle centralizado.
+          </Alert>
+          <p className="text-sm text-gray-600 mt-4 mb-4">
+            Valida acesso informando o ID do cliente e o código do produto.
+            Não inicia trial nem cria clientes.
           </p>
 
           <Endpoint
@@ -611,15 +976,18 @@ function isValidHubSignature(rawBody, signature, secret) {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {[
-                  ['customer_not_found', 'Cliente não existe no Hub', 'Verificar o customerId enviado'],
+                  ['customer_not_found', 'Cliente não existe no Hub', 'Verificar document/customerId enviado'],
                   ['customer_blocked',   'Cliente está bloqueado', 'Exibir mensagem de conta suspensa'],
-                  ['product_not_found',  'productCode inválido', 'Verificar o código do produto'],
-                  ['no_license',         'Cliente não tem licença para o produto', 'Direcionar para página de compra'],
+                  ['product_not_found',  'productId/productCode inválido', 'Verificar o ID ou código do produto'],
+                  ['trial_active',       'Trial em andamento (canAccess: true)', 'Exibir banner de trial'],
+                  ['trial_expired',      'Trial expirado sem conversão', 'Redirecionar para tela de compra/planos'],
+                  ['no_license',         'Sem trial configurado e sem licença', 'Contato comercial ou tela de planos'],
+                  ['licensed',           'Licença paga ativa (canAccess: true)', 'Liberar acesso completo'],
                   ['license_suspended',  'Licença suspensa por inadimplência', 'Exibir aviso de pagamento pendente'],
-                  ['license_expired',    'Licença expirada', 'Direcionar para renovação'],
-                  ['license_revoked',    'Licença revogada pelo admin', 'Contatar suporte'],
+                  ['license_expired',    'Licença expirada após carência', 'Direcionar para renovação'],
+                  ['license_revoked',    'Licença revogada manualmente', 'Contatar suporte'],
                   ['license_inactive',   'Licença inativa (não iniciada)', 'Aguardar ativação'],
-                  ['grace_period',       'Em período de carência (allowed: true)', 'Exibir aviso de renovação'],
+                  ['grace_period',       'Em período de carência (canAccess: true)', 'Exibir aviso de renovação urgente'],
                 ].map(([reason, cause, action], i) => (
                   <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-3 py-2 font-mono text-red-600 text-xs font-medium">{reason}</td>
@@ -645,81 +1013,106 @@ function isValidHubSignature(rawBody, signature, secret) {
         {/* ── EXEMPLOS DE CÓDIGO ───────────────────────────────────────────── */}
         <Section id="examples" title="Exemplos de Código" icon={<Code2 size={16} />}>
 
-          <h3 className="font-semibold text-gray-900 mb-3">Node.js / TypeScript</h3>
+          <h3 className="font-semibold text-gray-900 mb-3">Node.js / TypeScript — Fluxo completo de login</h3>
           <CodeBlock language="typescript" code={`// hubBillingClient.ts
 const BASE_URL = process.env.HUB_BILLING_BASE_URL!
 const API_KEY  = process.env.HUB_BILLING_API_KEY!
+const PRODUCT_ID = process.env.HUB_PRODUCT_ID!
 
-interface AccessResult {
-  allowed: boolean
-  reason?: string
-  features?: Record<string, unknown>
-  expiresAt?: string | null
+interface ResolveResult {
+  customerId: string
+  productId: string
+  licenseId: string | null
+  accessStatus: 'trial' | 'licensed' | 'blocked' | 'no_license'
+  trialStartedAt: string | null
+  trialEndAt: string | null
+  licenseEndAt: string | null
+  daysLeft: number | null
+  canAccess: boolean
+  banner: string | null
 }
 
-export async function checkAccess(
-  customerId: string,
-  productCode: string
-): Promise<AccessResult> {
-  const res = await fetch(
-    \`\${BASE_URL}/access/customer/\${customerId}/product/\${productCode}\`,
-    {
-      headers: {
-        'X-API-Key': API_KEY,
-        'Content-Type': 'application/json',
-      },
-      // Nunca cache respostas de acesso por mais de 60s
-      next: { revalidate: 60 },
-    }
-  )
-
+// Usar no login — onboarding + decisão de acesso
+export async function resolveAccess(
+  document: string,
+  personType: 'PF' | 'PJ',
+  name: string,
+  email: string
+): Promise<ResolveResult> {
+  const res = await fetch(\`\${BASE_URL}/access/resolve\`, {
+    method: 'POST',
+    headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ document, personType, productId: PRODUCT_ID, name, email }),
+  })
   if (res.status === 401) throw new Error('API Key inválida')
-  if (res.status === 429) throw new Error('Rate limit atingido')
   if (!res.ok) throw new Error(\`Hub Billing error: \${res.status}\`)
-
   return res.json()
 }
 
-// Uso:
-const access = await checkAccess(user.hubCustomerId, 'SOFTX_PRO')
-if (!access.allowed) {
-  redirect('/planos')
+// Usar para consultas periódicas (sem onboarding)
+export async function getAccessStatus(
+  customerId: string
+): Promise<{ accessStatus: string; canAccess: boolean; daysLeft: number | null; banner: string | null }> {
+  const res = await fetch(
+    \`\${BASE_URL}/access/status?customerId=\${customerId}&productId=\${PRODUCT_ID}\`,
+    { headers: { 'X-API-Key': API_KEY } }
+  )
+  return res.json()
 }
-const maxUsers = access.features?.max_users as number`} />
+
+// Uso no login:
+const access = await resolveAccess(user.document, 'PF', user.name, user.email)
+
+if (!access.canAccess) {
+  return redirect(\`/planos?reason=\${access.accessStatus}\`)
+}
+
+// Armazena na sessão
+session.hubCustomerId = access.customerId
+session.accessStatus  = access.accessStatus
+if (access.banner) showBanner(access.banner)`} />
 
           <h3 className="font-semibold text-gray-900 mt-6 mb-3">Python</h3>
           <CodeBlock language="python" code={`# hub_billing.py
-import os
-import requests
-from functools import lru_cache
+import os, requests
 
-BASE_URL = os.environ["HUB_BILLING_BASE_URL"]
-API_KEY  = os.environ["HUB_BILLING_API_KEY"]
+BASE_URL   = os.environ["HUB_BILLING_BASE_URL"]
+API_KEY    = os.environ["HUB_BILLING_API_KEY"]
+PRODUCT_ID = os.environ["HUB_PRODUCT_ID"]
 
 session = requests.Session()
-session.headers.update({"X-API-Key": API_KEY})
+session.headers.update({"X-API-Key": API_KEY, "Content-Type": "application/json"})
 
-def check_access(customer_id: str, product_code: str) -> dict:
-    """Verifica se o cliente tem acesso ao produto."""
-    url = f"{BASE_URL}/access/customer/{customer_id}/product/{product_code}"
-    response = session.get(url, timeout=5)
+def resolve_access(document: str, person_type: str, name: str, email: str) -> dict:
+    """Onboarding + decisão de acesso. Usar no login."""
+    response = session.post(f"{BASE_URL}/access/resolve", json={
+        "document": document,
+        "personType": person_type,
+        "productId": PRODUCT_ID,
+        "name": name,
+        "email": email,
+    }, timeout=5)
     response.raise_for_status()
     return response.json()
 
-def get_entitlements(customer_id: str) -> dict:
-    """Retorna todos os produtos do cliente."""
-    url = f"{BASE_URL}/access/entitlements/{customer_id}"
-    response = session.get(url, timeout=5)
+def get_access_status(customer_id: str) -> dict:
+    """Consulta periódica de status. Não inicia trial."""
+    response = session.get(
+        f"{BASE_URL}/access/status",
+        params={"customerId": customer_id, "productId": PRODUCT_ID},
+        timeout=5,
+    )
     response.raise_for_status()
     return response.json()
 
-# Uso:
-result = check_access("a1b2c3d4-...", "SOFTX_PRO")
-if not result["allowed"]:
-    raise PermissionError(f"Acesso negado: {result.get('reason')}")
+# Uso no login:
+result = resolve_access("123.456.789-09", "PF", "Maria", "maria@ex.com")
+if not result["canAccess"]:
+    raise PermissionError(f"Acesso negado: {result['accessStatus']}")
 
-features = result.get("features", {})
-max_users = features.get("max_users", 1)`} />
+customer_id = result["customerId"]
+if result["banner"]:
+    show_banner(result["banner"])`} />
 
           <h3 className="font-semibold text-gray-900 mt-6 mb-3">PHP</h3>
           <CodeBlock language="php" code={`<?php
@@ -727,43 +1120,59 @@ max_users = features.get("max_users", 1)`} />
 class HubBillingClient {
     private string $baseUrl;
     private string $apiKey;
+    private string $productId;
 
     public function __construct() {
-        $this->baseUrl = $_ENV['HUB_BILLING_BASE_URL'];
-        $this->apiKey  = $_ENV['HUB_BILLING_API_KEY'];
+        $this->baseUrl   = $_ENV['HUB_BILLING_BASE_URL'];
+        $this->apiKey    = $_ENV['HUB_BILLING_API_KEY'];
+        $this->productId = $_ENV['HUB_PRODUCT_ID'];
     }
 
-    public function checkAccess(string $customerId, string $productCode): array {
-        $url = "{$this->baseUrl}/access/customer/{$customerId}/product/{$productCode}";
-
+    public function resolveAccess(string $document, string $personType, string $name, string $email): array {
+        $payload = json_encode([
+            'document'   => $document,
+            'personType' => $personType,
+            'productId'  => $this->productId,
+            'name'       => $name,
+            'email'      => $email,
+        ]);
         $ctx = stream_context_create(['http' => [
-            'header' => "X-API-Key: {$this->apiKey}\r\nContent-Type: application/json\r\n",
+            'method'  => 'POST',
+            'header'  => "X-API-Key: {$this->apiKey}\r\nContent-Type: application/json\r\n",
+            'content' => $payload,
             'timeout' => 5,
         ]]);
-
-        $body = file_get_contents($url, false, $ctx);
+        $body = file_get_contents("{$this->baseUrl}/access/resolve", false, $ctx);
         if ($body === false) throw new RuntimeException('Hub Billing unreachable');
-
         return json_decode($body, true);
     }
 }
 
-// Uso:
-$hub = new HubBillingClient();
-$access = $hub->checkAccess($user['hub_customer_id'], 'SOFTX_PRO');
+// Uso no login:
+$hub    = new HubBillingClient();
+$access = $hub->resolveAccess($user['document'], 'PF', $user['name'], $user['email']);
 
-if (!$access['allowed']) {
+if (!$access['canAccess']) {
     http_response_code(403);
-    die(json_encode(['error' => 'Sem licença ativa']));
+    die(json_encode(['error' => $access['accessStatus'], 'banner' => $access['banner']]));
 }
 
-$maxUsers = $access['features']['max_users'] ?? 1;`} />
+// Salva na sessão
+$_SESSION['hub_customer_id'] = $access['customerId'];
+$_SESSION['access_status']   = $access['accessStatus'];`} />
 
           <h3 className="font-semibold text-gray-900 mt-6 mb-3">cURL (linha de comando)</h3>
-          <CodeBlock language="bash" code={`# Verificar acesso
+          <CodeBlock language="bash" code={`# Resolve acesso (login/onboarding)
+curl -s -X POST \\
+  -H "X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{"document":"123.456.789-09","personType":"PF","productId":"UUID_PRODUTO","name":"Maria","email":"maria@ex.com"}' \\
+  "https://billing.seudominio.com/api/v1/access/resolve" | jq .
+
+# Consultar status periodicamente
 curl -s \\
   -H "X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx" \\
-  "https://billing.seudominio.com/api/v1/access/customer/UUID_DO_CLIENTE/product/SOFTX_PRO" \\
+  "https://billing.seudominio.com/api/v1/access/status?customerId=UUID_CLIENTE&productId=UUID_PRODUTO" \\
   | jq .
 
 # Listar todos os produtos do cliente
@@ -801,12 +1210,15 @@ async function checkAccessCached(customerId, productCode, redis) {
           <div className="space-y-2">
             {[
               'Gere uma API Key exclusiva por sistema/ambiente (não reutilize entre produção e dev)',
-              'Armazene a API Key em variáveis de ambiente, nunca no código-fonte',
-              'Implemente tratamento de erro para status 401, 429 e 5xx',
+              'Armazene API Key e productId em variáveis de ambiente, nunca no código-fonte',
+              'Use POST /access/resolve no login — é idempotente e trata onboarding completo',
+              'Use GET /access/status para refreshes periódicos (não use resolve novamente)',
+              'Exiba o campo banner quando não nulo — a mensagem já está pronta para o usuário',
+              'Implemente tela de conversão para canAccess: false com accessStatus como contexto',
+              'Implemente tratamento de erro para status 401, 422 e 5xx',
+              'Configure trial_days no produto antes de ativar integrações',
               'Use cache de 30–60s para reduzir requisições em alta volumetria',
               'Configure webhook para invalidar cache automaticamente quando a licença mudar',
-              'Registre o customerId do Hub Billing na base do seu sistema no momento do cadastro',
-              'Teste com o endpoint antes de ir para produção usando uma API Key de homologação',
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-2">
                 <div className="w-5 h-5 rounded-full border-2 border-gray-300 flex items-center justify-center flex-shrink-0 mt-0.5">
