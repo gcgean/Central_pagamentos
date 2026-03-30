@@ -10,7 +10,8 @@ export class ApiKeyGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest()
-    const apiKey = request.headers['x-api-key']
+    const headerValue = request.headers['x-api-key']
+    const apiKey = Array.isArray(headerValue) ? headerValue[0] : headerValue
 
     if (!apiKey) {
       throw new UnauthorizedException('API key ausente. Inclua o header x-api-key.')
@@ -19,8 +20,9 @@ export class ApiKeyGuard implements CanActivate {
     // Hash da key para busca segura (nunca armazenamos a key em plain text)
     const keyHash = createHash('sha256').update(apiKey).digest('hex')
     const integration = await this.integrations.findByKeyHash(keyHash)
+    const isActive = Boolean(integration?.isActive ?? integration?.is_active)
 
-    if (!integration || !integration.isActive) {
+    if (!integration || !isActive) {
       throw new UnauthorizedException('API key inválida ou desativada.')
     }
 
@@ -37,7 +39,7 @@ export class ApiKeyGuard implements CanActivate {
 
     // Anexa ao request para uso nos controllers
     request.integration = integration
-    request.productId = integration.productId
+    request.productId = integration.productId ?? integration.product_id
 
     return true
   }
