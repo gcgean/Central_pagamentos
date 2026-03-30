@@ -81,6 +81,26 @@ export class LicensesRepository {
     return rows.map(this.map)
   }
 
+  // Busca qualquer licença de trial para o customer+product, independente do status.
+  // Usado para determinar se o trial já foi concedido anteriormente.
+  async findTrialByCustomerAndProduct(
+    customerId: string,
+    productId: string,
+  ): Promise<License | null> {
+    const [row] = await this.sql`
+      SELECT l.*, p.code AS product_code, pl.code AS plan_code
+      FROM licenses l
+      JOIN products p   ON p.id  = l.product_id
+      LEFT JOIN plans pl ON pl.id = l.plan_id
+      WHERE l.customer_id  = ${customerId}
+        AND l.product_id   = ${productId}
+        AND l.origin_type  = 'trial'
+      ORDER BY l.created_at DESC
+      LIMIT 1
+    `
+    return row ? this.map(row) : null
+  }
+
   async findExpiredAfterGrace(now: Date): Promise<License[]> {
     const rows = await this.sql`
       SELECT * FROM licenses

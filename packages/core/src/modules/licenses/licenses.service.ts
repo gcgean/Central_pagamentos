@@ -239,6 +239,11 @@ export class LicensesService {
     return this.repo.findAllByCustomer(customerId)
   }
 
+  // Retorna qualquer licença de trial (qualquer status) para verificar se trial já foi usado
+  async findTrialByCustomerAndProduct(customerId: string, productId: string): Promise<License | null> {
+    return this.repo.findTrialByCustomerAndProduct(customerId, productId)
+  }
+
   // ─── Rotina: expirar licenças vencidas ───────────────────────────────────
 
   async expireOverdueLicenses(): Promise<number> {

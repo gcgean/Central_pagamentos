@@ -9,13 +9,14 @@ export class ProductsRepository {
 
   async create(data: any) {
     const [row] = await this.sql`
-      INSERT INTO products (code, name, description, billing_type, status)
+      INSERT INTO products (code, name, description, billing_type, status, trial_days)
       VALUES (
         ${data.code},
         ${data.name},
         ${data.description ?? null},
         ${data.billingType ?? 'recurring'},
-        ${data.status ?? (data.isActive === false ? 'inactive' : 'active')}::product_status
+        ${data.status ?? (data.isActive === false ? 'inactive' : 'active')}::product_status,
+        ${data.trialDays ?? 0}
       )
       RETURNING *
     `
@@ -48,6 +49,7 @@ export class ProductsRepository {
         description  = COALESCE(${data.description ?? null}, description),
         billing_type = COALESCE(${data.billingType ?? null}, billing_type),
         status       = COALESCE(${newStatus ?? null}::product_status, status),
+        trial_days   = COALESCE(${data.trialDays ?? null}, trial_days),
         updated_at   = NOW()
       WHERE id = ${id}
       RETURNING *
@@ -64,6 +66,7 @@ export class ProductsRepository {
       billingType: row.billing_type,
       status:      row.status,
       isActive:    row.status === 'active',
+      trialDays:   row.trial_days ?? 0,
       createdAt:   row.created_at,
       updatedAt:   row.updated_at,
     }

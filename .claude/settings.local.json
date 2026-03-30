@@ -37,7 +37,12 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(''''mercadopago'''' in d.get\\(''''dependencies'''',{}\\)\\)\")",
       "Bash(find 'C:/Projetos Web/Central_pagamentos' -name .env* -not -path */node_modules/*)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:62419)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:62419/docs)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:62419/docs)",
+      "Bash(PGPASSWORD=hub_local_pass psql -h localhost -p 5432 -U hub -d hub_billing -f \"C:/Projetos Web/Central_pagamentos/packages/database/migrations/002_product_trial_days.sql\")",
+      "Bash(powershell.exe -Command \"Get-Service -Name ''*postgres*'' -ErrorAction SilentlyContinue | Select-Object Name, Status, DisplayName\")",
+      "Bash(powershell.exe -Command \"Get-Service | Where-Object { $_.DisplayName -like ''*sql*'' -or $_.DisplayName -like ''*postgres*'' -or $_.Name -like ''*pg*'' } | Select-Object Name, Status, DisplayName\")",
+      "Bash(powershell.exe -Command \"netstat -ano | findstr '''':5432''''\")",
+      "Bash(powershell.exe -Command \"netstat -ano | findstr ''''LISTEN''''\")"
     ]
   }
 }

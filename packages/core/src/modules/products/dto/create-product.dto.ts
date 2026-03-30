@@ -1,4 +1,4 @@
-import { IsString, IsBoolean, IsOptional, IsEnum, MinLength, MaxLength, Matches } from 'class-validator'
+import { IsString, IsBoolean, IsOptional, IsEnum, IsInt, Min, MinLength, MaxLength, Matches } from 'class-validator'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 
 export enum ProductBillingType {
@@ -47,4 +47,14 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean
+
+  @ApiPropertyOptional({
+    example: 14,
+    default: 0,
+    description: 'Dias de trial gratuito concedidos automaticamente no primeiro acesso. 0 = sem trial.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  trialDays?: number
 }

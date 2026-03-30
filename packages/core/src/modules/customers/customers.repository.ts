@@ -45,6 +45,16 @@ export class CustomersRepository {
     return row ? this.map(row) : null
   }
 
+  async findByEmail(email: string): Promise<Customer | null> {
+    const [row] = await this.sql`
+      SELECT *
+      FROM customers
+      WHERE lower(email) = lower(${email})
+      LIMIT 1
+    `
+    return row ? this.map(row) : null
+  }
+
   async findAll(params: {
     page: number
     limit: number
