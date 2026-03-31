@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common'
+import { Injectable, NotFoundException, Logger, UnprocessableEntityException } from '@nestjs/common'
 import { Inject } from '@nestjs/common'
 import { DATABASE_CONNECTION } from '../../shared/database/database.module'
 import type { Sql } from 'postgres'
@@ -18,16 +18,21 @@ export class OrdersService {
     customerId: string
     productId: string
     planId?: string
-    contractedAmount: number
+    amount?: number
+    contractedAmount?: number
     contractedCurrency?: string
   }) {
+    await this.ensureReferences(data.customerId, data.productId, data.planId)
+
+    const contractedAmount = this.normalizeAmount(data)
+
     const [order] = await this.sql`
       INSERT INTO orders (
         customer_id, product_id, plan_id,
         contracted_amount, contracted_currency, status
       ) VALUES (
         ${data.customerId}, ${data.productId}, ${data.planId ?? null},
-        ${data.contractedAmount},
+        ${contractedAmount},
         ${data.contractedCurrency ?? 'BRL'},
         'draft'::order_status
       )
@@ -39,7 +44,7 @@ export class OrdersService {
         customer_id, order_id, amount, currency, due_date
       ) VALUES (
         ${data.customerId}, ${order.id},
-        ${data.contractedAmount},
+        ${contractedAmount},
         ${data.contractedCurrency ?? 'BRL'},
         (NOW() + INTERVAL '3 days')::date
       )
@@ -51,6 +56,42 @@ export class OrdersService {
 
     this.logger.log(`Pedido criado: ${order.id}`)
     return this.findById(order.id)
+  }
+
+  private normalizeAmount(data: { contractedAmount?: number; amount?: number }): number {
+    const raw = data.contractedAmount ?? data.amount
+    const numeric = Number(raw)
+
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      throw new UnprocessableEntityException('Informe "contractedAmount" ou "amount" com valor maior que zero.')
+    }
+
+    // Compatibilidade: valores decimais são interpretados como reais e convertidos para centavos.
+    return Number.isInteger(numeric) ? numeric : Math.round(numeric * 100)
+  }
+
+  private async ensureReferences(customerId: string, productId: string, planId?: string): Promise<void> {
+    const [customer] = await this.sql`SELECT id FROM customers WHERE id = ${customerId} LIMIT 1`
+    if (!customer) {
+      throw new NotFoundException(`Cliente ${customerId} não encontrado`)
+    }
+
+    const [product] = await this.sql`SELECT id FROM products WHERE id = ${productId} LIMIT 1`
+    if (!product) {
+      throw new NotFoundException(`Produto ${productId} não encontrado`)
+    }
+
+    if (!planId) return
+
+    const [plan] = await this.sql`
+      SELECT id FROM plans
+      WHERE id = ${planId}
+        AND product_id = ${productId}
+      LIMIT 1
+    `
+    if (!plan) {
+      throw new UnprocessableEntityException(`Plano ${planId} não pertence ao produto ${productId}`)
+    }
   }
 
   async findById(id: string) {

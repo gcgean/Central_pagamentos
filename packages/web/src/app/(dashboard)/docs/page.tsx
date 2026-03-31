@@ -813,16 +813,21 @@ async function loadUserProfile(customerId) {
             <strong> criar pedido/assinatura → gerar checkout → acompanhar status da cobrança → receber confirmação via webhook</strong>.
           </p>
 
+          <Alert type="info">
+            Conversão de trial para pago: se já existir assinatura em trial/ativa, use <code className="font-mono text-xs">PATCH /subscriptions/{'{subscriptionId}'}/change-plan</code> e depois <code className="font-mono text-xs">POST /subscriptions/{'{subscriptionId}'}/checkout</code>. Se o trial veio apenas do <code className="font-mono text-xs">/access/resolve</code>, use <code className="font-mono text-xs">POST /orders</code> + <code className="font-mono text-xs">POST /orders/{'{orderId}'}/checkout</code>.
+          </Alert>
+
           <Endpoint
             method="POST"
             path="/orders"
-            description="Cria pedido avulso para cobrança one-time"
+            description="Cria pedido avulso para cobrança one-time (inclui conversão de trial sem assinatura)"
           >
             <PropTable rows={[
               { name: 'customerId', type: 'uuid', required: true, description: 'ID do cliente no Hub Billing' },
               { name: 'productId', type: 'uuid', required: true, description: 'ID do produto' },
-              { name: 'planId', type: 'uuid', required: true, description: 'ID do plano contratado' },
-              { name: 'contractedAmount', type: 'number', required: true, description: 'Valor em centavos (ex: 9900 = R$ 99,00)' },
+              { name: 'planId', type: 'uuid', required: false, description: 'ID do plano contratado (recomendado)' },
+              { name: 'contractedAmount', type: 'number', required: false, description: 'Valor em centavos (ex: 9900 = R$ 99,00)' },
+              { name: 'amount', type: 'number', required: false, description: 'Alias de compatibilidade. Se decimal, é convertido para centavos' },
             ]} />
             <CodeBlock language="json" code={`{
   "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
@@ -830,12 +835,33 @@ async function loadUserProfile(customerId) {
   "planId": "uuid-do-plano",
   "contractedAmount": 9900
 }`} />
+            <CodeBlock language="json" code={`{
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productId": "uuid-do-produto",
+  "planId": "uuid-do-plano",
+  "amount": 99.9
+}`} />
+          </Endpoint>
+
+          <Endpoint
+            method="PATCH"
+            path="/subscriptions/{subscriptionId}/change-plan"
+            description="Upgrade/downgrade da assinatura existente (trialing/active/overdue)"
+          >
+            <PropTable rows={[
+              { name: 'planId', type: 'uuid', required: true, description: 'Novo plano da assinatura' },
+              { name: 'amount', type: 'number', required: true, description: 'Novo valor contratado em centavos' },
+            ]} />
+            <CodeBlock language="json" code={`{
+  "planId": "uuid-do-novo-plano",
+  "amount": 14990
+}`} />
           </Endpoint>
 
           <Endpoint
             method="POST"
-            path="/orders/{orderId}/checkout"
-            description="Gera cobrança PIX ou cartão para o pedido"
+            path="/orders/{orderId}/checkout ou /subscriptions/{subscriptionId}/checkout"
+            description="Gera cobrança PIX ou cartão para pedido/assinatura"
           >
             <PropTable rows={[
               { name: 'billingType', type: `'PIX' | 'CREDIT_CARD'`, required: true, description: 'Método de pagamento' },

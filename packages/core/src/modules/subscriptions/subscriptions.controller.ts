@@ -40,6 +40,24 @@ class CreateCheckoutDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() installmentCount?: number
 }
 
+class CreateOrderDto {
+  @ApiProperty() @IsUUID() customerId: string
+  @ApiProperty() @IsUUID() productId: string
+  @ApiPropertyOptional() @IsOptional() @IsUUID() planId?: string
+
+  @ApiPropertyOptional({ description: 'Valor contratado em centavos (inteiro)' })
+  @IsOptional() @IsNumber() @Min(0.01)
+  contractedAmount?: number
+
+  @ApiPropertyOptional({ description: 'Alias de compatibilidade para contractedAmount. Decimais serão convertidos para centavos.' })
+  @IsOptional() @IsNumber() @Min(0.01)
+  amount?: number
+
+  @ApiPropertyOptional({ default: 'BRL' })
+  @IsOptional() @IsString()
+  contractedCurrency?: string
+}
+
 @ApiTags('subscriptions')
 @ApiBearerAuth()
 @UseGuards(AdminJwtGuard)
@@ -137,8 +155,8 @@ export class OrdersController {
   @Post()
   @Roles('super_admin', 'financial', 'operations')
   @AuditAction('order.create')
-  @ApiOperation({ summary: 'Criar pedido avulso' })
-  create(@Body() dto: any) {
+  @ApiOperation({ summary: 'Criar pedido avulso para checkout (incluindo conversão de trial)' })
+  create(@Body() dto: CreateOrderDto) {
     return this.orders.create(dto)
   }
 

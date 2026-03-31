@@ -385,6 +385,18 @@ O trial é gerenciado **exclusivamente pelo Hub**. O sistema satélite não cont
 
 ## Endpoints financeiros (JWT Admin)
 
+### Conversão de trial para plano pago (fluxo oficial)
+
+Existem dois cenários oficiais:
+
+1. **Trial com assinatura já existente (`status=trialing`)**
+- `PATCH /api/v1/subscriptions/{subscriptionId}/change-plan`
+- `POST /api/v1/subscriptions/{subscriptionId}/checkout`
+
+2. **Trial sem assinatura (trial vindo de `/access/resolve`)**
+- `POST /api/v1/orders`
+- `POST /api/v1/orders/{orderId}/checkout`
+
 ### Criar pedido
 
 ```http
@@ -399,6 +411,20 @@ Content-Type: application/json
   "contractedAmount": 9900
 }
 ```
+
+Payload alternativo aceito por compatibilidade:
+
+```json
+{
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productId": "uuid-do-produto",
+  "planId": "uuid-do-plano",
+  "amount": 99.9
+}
+```
+
+- `contractedAmount`: valor em centavos (inteiro).
+- `amount`: alias de compatibilidade. Se decimal, o Hub converte para centavos.
 
 ### Gerar checkout do pedido
 
@@ -443,6 +469,38 @@ Resposta:
   "dueDate": "2026-04-01"
 }
 ```
+
+### Upgrade de assinatura existente (trialing/active/overdue)
+
+```http
+PATCH /api/v1/subscriptions/{subscriptionId}/change-plan
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "planId": "uuid-novo-plano",
+  "amount": 14990
+}
+```
+
+Em seguida, gere a cobrança:
+
+```http
+POST /api/v1/subscriptions/{subscriptionId}/checkout
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "billingType": "PIX"
+}
+```
+
+Resposta de checkout (campos principais para integração):
+- `chargeId`
+- `status`
+- `checkoutUrl` (quando aplicável)
+- `pixCode` (quando PIX)
+- `amount`
 
 ### Consultar cobranças por origem
 
