@@ -14,7 +14,7 @@ export class ApiKeyGuard implements CanActivate {
     const apiKey = Array.isArray(headerValue) ? headerValue[0] : headerValue
 
     if (!apiKey) {
-      throw new UnauthorizedException('API key ausente. Inclua o header x-api-key.')
+      throw new UnauthorizedException('API key ausente. Inclua o header X-API-Key.')
     }
 
     // Hash da key para busca segura (nunca armazenamos a key em plain text)

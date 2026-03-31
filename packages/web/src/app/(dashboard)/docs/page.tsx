@@ -350,6 +350,8 @@ Content-Type: application/json
   "trialEndAt": "2026-04-12T10:00:00.000Z",
   "licenseEndAt": null,
   "daysLeft": 14,
+  "reason": "trial_active",
+  "features": { "max_users": 5, "reports": true },
   "canAccess": true,
   "banner": "Bem-vindo! Você tem 14 dias de avaliação gratuita."
 }`} />
@@ -364,6 +366,8 @@ Content-Type: application/json
   "trialEndAt": null,
   "licenseEndAt": "2026-12-31T23:59:59.000Z",
   "daysLeft": 276,
+  "reason": "licensed",
+  "features": { "max_users": 10, "export_pdf": true },
   "canAccess": true,
   "banner": null
 }`} />
@@ -378,6 +382,8 @@ Content-Type: application/json
   "trialEndAt": "2026-03-22T10:00:00.000Z",
   "licenseEndAt": null,
   "daysLeft": null,
+  "reason": "trial_expired",
+  "features": null,
   "canAccess": false,
   "banner": "Seu período de avaliação expirou. Adquira uma licença para continuar."
 }`} />
@@ -469,23 +475,33 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
 
             <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Resposta — Trial ativo</h4>
             <CodeBlock language="json" code={`{
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
   "accessStatus": "trial",
   "canAccess": true,
+  "trialStartedAt": "2026-03-29T10:00:00.000Z",
   "trialEndAt": "2026-04-12T10:00:00.000Z",
   "licenseEndAt": null,
   "daysLeft": 10,
   "reason": "trial_active",
+  "features": { "max_users": 5, "reports": true },
   "banner": "Você está no período de avaliação gratuita. Restam 10 dias."
 }`} />
 
             <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Resposta — Licença em carência</h4>
             <CodeBlock language="json" code={`{
+  "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
+  "productId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
   "accessStatus": "licensed",
   "canAccess": true,
+  "trialStartedAt": null,
   "trialEndAt": null,
   "licenseEndAt": "2026-04-05T23:59:59.000Z",
   "daysLeft": 3,
   "reason": "grace_period",
+  "features": { "max_users": 10, "export_pdf": true },
   "banner": "Seu acesso está em carência. Regularize o pagamento. Restam 3 dia(s)."
 }`} />
 
@@ -812,7 +828,7 @@ async function loadUserProfile(customerId) {
   "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
   "productId": "uuid-do-produto",
   "planId": "uuid-do-plano",
-  "contractedAmount": 99
+  "contractedAmount": 9900
 }`} />
           </Endpoint>
 
@@ -831,11 +847,13 @@ async function loadUserProfile(customerId) {
             <CodeBlock language="json" code={`{
   "chargeId": "uuid-local-da-cobranca",
   "externalChargeId": "151589827825",
+  "status": "pending",
   "checkoutUrl": null,
+  "pixCode": "00020126...",
   "pixQrCode": "data:image/png;base64,...",
   "pixPayload": "00020126...",
   "boletoUrl": null,
-  "amount": 99,
+  "amount": 9900,
   "currency": "BRL",
   "dueDate": "2026-03-31"
 }`} />
@@ -903,8 +921,8 @@ Authorization: Bearer <accessToken>`} />
   "customerId": "2db2626d-4e1d-4ff3-a898-152a37a883d9",
   "payload": {
     "chargeId": "151589827825",
-    "status": "approved",
-    "amount": 99
+    "status": "paid",
+    "amount": 9900
   },
   "createdAt": "2026-03-28T21:27:16.000Z"
 }
@@ -961,7 +979,7 @@ function isValidHubSignature(rawBody, signature, secret) {
         {/* ── ERROS ────────────────────────────────────────────────────────── */}
         <Section id="errors" title="Erros & Motivos de Negação" icon={<AlertCircle size={16} />}>
           <p className="text-sm text-gray-600 mb-4">
-            Quando <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">allowed: false</code>,
+            Quando <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">canAccess: false</code>,
             o campo <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">reason</code> indica o motivo exato.
           </p>
 
@@ -1001,13 +1019,25 @@ function isValidHubSignature(rawBody, signature, secret) {
 
           <h3 className="font-semibold text-gray-900 mt-5 mb-3">Erros HTTP</h3>
           <PropTable rows={[
-            { name: '200', type: 'OK',          description: 'Requisição processada. Verifique o campo allowed.' },
+            { name: '200', type: 'OK',          description: 'Requisição processada. Verifique canAccess/accessStatus.' },
             { name: '401', type: 'Unauthorized', description: 'API Key ausente, inválida ou revogada.' },
             { name: '403', type: 'Forbidden',    description: 'Token JWT sem permissão para o endpoint administrativo.' },
             { name: '404', type: 'Not Found', description: 'Recurso não encontrado (pedido, assinatura, cliente, produto).' },
+            { name: '429', type: 'Too Many Requests', description: 'Rate limit atingido. Aguarde e tente novamente.' },
             { name: '422', type: 'Unprocessable', description: 'UUID inválido, documento inválido ou payload malformado.' },
             { name: '500', type: 'Server Error', description: 'Erro interno. Tente novamente em alguns segundos.' },
           ]} />
+
+          <h3 className="font-semibold text-gray-900 mt-5 mb-3">Payload padrão de erro</h3>
+          <CodeBlock language="json" code={`{
+  "code": "VALIDATION_ERROR",
+  "message": "document must be longer than or equal to 11 characters",
+  "details": ["document must be longer than or equal to 11 characters"],
+  "correlationId": "2aa7bf04-f8c9-43c7-bf6f-efde44f56a22",
+  "timestamp": "2026-03-30T22:00:00.000Z",
+  "path": "/api/v1/access/resolve",
+  "statusCode": 422
+}`} />
         </Section>
 
         {/* ── EXEMPLOS DE CÓDIGO ───────────────────────────────────────────── */}
@@ -1028,6 +1058,8 @@ interface ResolveResult {
   trialEndAt: string | null
   licenseEndAt: string | null
   daysLeft: number | null
+  reason: string
+  features: Record<string, unknown> | null
   canAccess: boolean
   banner: string | null
 }
@@ -1052,7 +1084,20 @@ export async function resolveAccess(
 // Usar para consultas periódicas (sem onboarding)
 export async function getAccessStatus(
   customerId: string
-): Promise<{ accessStatus: string; canAccess: boolean; daysLeft: number | null; banner: string | null }> {
+): Promise<{
+  customerId: string
+  productId: string
+  licenseId: string | null
+  accessStatus: string
+  trialStartedAt: string | null
+  trialEndAt: string | null
+  licenseEndAt: string | null
+  daysLeft: number | null
+  reason: string
+  features: Record<string, unknown> | null
+  canAccess: boolean
+  banner: string | null
+}> {
   const res = await fetch(
     \`\${BASE_URL}/access/status?customerId=\${customerId}&productId=\${PRODUCT_ID}\`,
     { headers: { 'X-API-Key': API_KEY } }
@@ -1190,17 +1235,17 @@ curl -s \\
             O endpoint de acesso é rápido (&lt;50ms), mas para alta volumetria recomendamos cache de curta duração:
           </p>
           <CodeBlock language="javascript" code={`// Com Redis (Node.js)
-async function checkAccessCached(customerId, productCode, redis) {
-  const cacheKey = \`access:\${customerId}:\${productCode}\`
+async function checkAccessCached(customerId, productId, redis) {
+  const cacheKey = \`access-status:\${customerId}:\${productId}\`
 
   // Tenta cache primeiro (TTL 60s)
   const cached = await redis.get(cacheKey)
   if (cached) return JSON.parse(cached)
 
-  const result = await checkAccess(customerId, productCode)
+  const result = await getAccessStatus(customerId)
 
   // Não cacheia negações por muito tempo (pode ter renovado)
-  const ttl = result.allowed ? 60 : 10
+  const ttl = result.canAccess ? 60 : 10
   await redis.setex(cacheKey, ttl, JSON.stringify(result))
 
   return result

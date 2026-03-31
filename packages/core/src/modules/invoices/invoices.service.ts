@@ -4,6 +4,8 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service'
 import { LicensesService } from '../licenses/licenses.service'
 import { OrdersService } from '../orders/orders.service'
 import dayjs from 'dayjs'
+import { InternalEventsService } from '../webhooks/internal-events.service'
+import { AccessCacheService } from '../../shared/cache/access-cache.service'
 
 @Injectable()
 export class InvoicesService {
@@ -16,6 +18,8 @@ export class InvoicesService {
     private readonly subscriptions: SubscriptionsService,
     private readonly licenses: LicensesService,
     private readonly orders: OrdersService,
+    private readonly internalEvents: InternalEventsService,
+    private readonly accessCache: AccessCacheService,
   ) {}
 
   // ─── Chamado pelo WebhookProcessor quando pagamento é confirmado ─────────
@@ -77,6 +81,26 @@ export class InvoicesService {
       await this.activateSubscriptionFromPayment(invoiceSubscriptionId, invoice)
     } else if (invoiceOrderId) {
       await this.activateOrderFromPayment(invoiceOrderId)
+    }
+
+    const context = await this.resolveOriginContext(invoice)
+    if (context.productId) {
+      await this.internalEvents.dispatch({
+        productId: context.productId,
+        customerId: context.customerId ?? chargeCustomerId,
+        eventType: 'payment.approved',
+        payload: {
+          chargeId: externalChargeId,
+          status: 'paid',
+          amount: chargeAmount,
+          currency: chargeCurrency,
+          originType: context.originType,
+          originId: context.originId,
+        },
+      })
+      this.accessCache.invalidateStatus(context.customerId ?? chargeCustomerId, context.productId)
+    } else {
+      this.accessCache.invalidateCustomer(chargeCustomerId)
     }
 
     this.logger.log(`Pagamento confirmado: charge ${charge.id}, invoice ${invoice.id}`)
@@ -141,6 +165,26 @@ export class InvoicesService {
         await this.subscriptions.markOverdue(invoiceSubscriptionId)
       }
     }
+
+    const invoice = await this.repo.findById(chargeInvoiceId)
+    const context = await this.resolveOriginContext(invoice)
+    if (context.productId) {
+      await this.internalEvents.dispatch({
+        productId: context.productId,
+        customerId: context.customerId ?? charge.customerId ?? charge.customer_id,
+        eventType: 'payment.failed',
+        payload: {
+          chargeId: externalChargeId,
+          status: 'failed',
+          reason,
+          originType: context.originType,
+          originId: context.originId,
+        },
+      })
+      this.accessCache.invalidateStatus(context.customerId ?? charge.customerId ?? charge.customer_id, context.productId)
+    } else {
+      this.accessCache.invalidateCustomer(charge.customerId ?? charge.customer_id)
+    }
   }
 
   async handleChargeback(externalChargeId: string): Promise<void> {
@@ -153,9 +197,10 @@ export class InvoicesService {
     await this.repo.updateInvoice(chargeInvoiceId, { status: 'void' })
 
     const invoice = await this.repo.findById(chargeInvoiceId)
+    const context = await this.resolveOriginContext(invoice)
 
     // Suspende a licença imediatamente em caso de chargeback
-    const invoiceSubscriptionId = invoice.subscriptionId ?? invoice.subscription_id
+    const invoiceSubscriptionId = context.originType === 'subscription' ? context.originId : null
     if (invoiceSubscriptionId) {
       const sub = await this.subscriptions.findById(invoiceSubscriptionId)
       const license = await this.licenses.findByCustomerAndProduct(
@@ -163,6 +208,21 @@ export class InvoicesService {
       )
       if (license) {
         await this.licenses.suspend(license.id, 'Chargeback recebido')
+      }
+
+      if (context.productId && context.customerId) {
+        await this.internalEvents.dispatch({
+          productId: context.productId,
+          customerId: context.customerId,
+          eventType: 'payment.chargeback',
+          payload: {
+            chargeId: externalChargeId,
+            status: 'chargeback',
+            originType: context.originType,
+            originId: context.originId,
+          },
+        })
+        this.accessCache.invalidateStatus(context.customerId, context.productId)
       }
     }
 
@@ -173,6 +233,21 @@ export class InvoicesService {
     const charge = await this.resolveChargeForEvent(externalChargeId, {})
     if (!charge) return
     await this.repo.updateCharge(charge.id, { status: 'canceled' })
+    const invoice = await this.repo.findById(charge.invoiceId ?? charge.invoice_id)
+    const context = await this.resolveOriginContext(invoice)
+    if (!context.productId || !context.customerId) return
+    await this.internalEvents.dispatch({
+      productId: context.productId,
+      customerId: context.customerId,
+      eventType: 'pix.expired',
+      payload: {
+        chargeId: externalChargeId,
+        status: 'canceled',
+        originType: context.originType,
+        originId: context.originId,
+      },
+    })
+    this.accessCache.invalidateStatus(context.customerId, context.productId)
   }
 
   private async resolveChargeForEvent(externalChargeId: string, payload: any) {
@@ -217,5 +292,39 @@ export class InvoicesService {
     const delays = [1, 6, 24]
     const hours = delays[attempt - 1] ?? 24
     return dayjs().add(hours, 'hour').toDate()
+  }
+
+  private async resolveOriginContext(invoice: any): Promise<{
+    originType: 'subscription' | 'order'
+    originId: string | null
+    productId: string | null
+    customerId: string | null
+  }> {
+    const subscriptionId = invoice?.subscriptionId ?? invoice?.subscription_id
+    const orderId = invoice?.orderId ?? invoice?.order_id
+    if (subscriptionId) {
+      const sub = await this.subscriptions.findById(subscriptionId)
+      return {
+        originType: 'subscription',
+        originId: sub.id,
+        productId: sub.productId,
+        customerId: sub.customerId,
+      }
+    }
+    if (orderId) {
+      const order = await this.orders.findById(orderId)
+      return {
+        originType: 'order',
+        originId: order.id,
+        productId: order.productId,
+        customerId: order.customerId,
+      }
+    }
+    return {
+      originType: 'order',
+      originId: null,
+      productId: null,
+      customerId: null,
+    }
   }
 }

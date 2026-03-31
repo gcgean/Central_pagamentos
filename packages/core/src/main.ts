@@ -1,9 +1,11 @@
 import { NestFactory } from '@nestjs/core'
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify'
-import { ValidationPipe, Logger, VersioningType } from '@nestjs/common'
+import { ValidationPipe, Logger, VersioningType, HttpStatus } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger'
 import { AppModule } from './app.module'
+import { ApiExceptionFilter } from './shared/http/api-exception.filter'
+import { CorrelationInterceptor } from './shared/http/correlation.interceptor'
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap')
@@ -27,7 +29,10 @@ async function bootstrap() {
     forbidNonWhitelisted: true,
     transform: true,
     transformOptions: { enableImplicitConversion: true },
+    errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
   }))
+  app.useGlobalFilters(new ApiExceptionFilter())
+  app.useGlobalInterceptors(new CorrelationInterceptor())
 
   // CORS — aceita "*" como wildcard em dev
   const corsOrigins = config.get<string[]>('app.corsOrigins', ['http://localhost:3001'])

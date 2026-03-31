@@ -70,7 +70,21 @@ export class PaymentsService {
         await this.syncPendingMercadoPagoCharge(charge.externalChargeId ?? charge.external_charge_id)
       }
     }
-    return this.repo.listChargesByOrigin(originType, originId)
+    const normalized = await this.repo.listChargesByOrigin(originType, originId)
+    return normalized.map((charge: any) => ({
+      chargeId: charge.id,
+      originType,
+      originId,
+      status: charge.status,
+      amount: charge.amount,
+      currency: charge.currency,
+      checkoutUrl: charge.checkoutUrl ?? charge.checkout_url ?? null,
+      pixCode: charge.pixPayload ?? charge.pix_payload ?? null,
+      pixQrCode: charge.pixQrCode ?? charge.pix_qr_code ?? null,
+      externalChargeId: charge.externalChargeId ?? charge.external_charge_id ?? null,
+      paidAt: charge.paidAt ?? charge.paid_at ?? null,
+      createdAt: charge.createdAt ?? charge.created_at ?? null,
+    }))
   }
 
   private async syncPendingMercadoPagoCharge(externalChargeId: string) {

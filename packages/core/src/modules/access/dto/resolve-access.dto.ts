@@ -76,6 +76,21 @@ export class ResolveAccessResponseDto {
   @ApiPropertyOptional({ example: 12, nullable: true, description: 'Dias restantes (trial ou licença).' })
   daysLeft: number | null
 
+  @ApiProperty({
+    example: 'trial_active',
+    description:
+      'Motivo detalhado da decisão. Ex.: trial_active, trial_expired, licensed, grace_period, ' +
+      'license_suspended, license_expired, license_revoked, no_license, customer_blocked, customer_not_found, product_not_found.',
+  })
+  reason: string
+
+  @ApiPropertyOptional({
+    description: 'Features liberadas para o cliente no contexto atual do produto.',
+    example: { max_users: 5, modules: ['dashboard', 'reports'] },
+    nullable: true,
+  })
+  features: Record<string, unknown> | null
+
   @ApiProperty({ example: true })
   canAccess: boolean
 
@@ -90,11 +105,23 @@ export class ResolveAccessResponseDto {
 // ─── GET /access/status response ──────────────────────────────────────────────
 
 export class AccessStatusResponseDto {
+  @ApiProperty({ example: '2db2626d-4e1d-4ff3-a898-152a37a883d9' })
+  customerId: string
+
+  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  productId: string
+
+  @ApiPropertyOptional({ example: 'f0e1d2c3-b4a5-6789-cdef-012345678901', nullable: true })
+  licenseId: string | null
+
   @ApiProperty({ enum: ['trial', 'licensed', 'blocked', 'no_license'], example: 'licensed' })
   accessStatus: AccessStatus
 
   @ApiProperty({ example: true })
   canAccess: boolean
+
+  @ApiPropertyOptional({ example: '2026-01-01T00:00:00.000Z', nullable: true })
+  trialStartedAt: string | null
 
   @ApiPropertyOptional({ example: '2026-01-15T23:59:59.000Z', nullable: true })
   trialEndAt: string | null
@@ -113,6 +140,13 @@ export class AccessStatusResponseDto {
       'customer_blocked | customer_not_found | product_not_found',
   })
   reason: string
+
+  @ApiPropertyOptional({
+    description: 'Features liberadas para o cliente no contexto atual do produto.',
+    example: { max_users: 5, modules: ['dashboard', 'reports'] },
+    nullable: true,
+  })
+  features: Record<string, unknown> | null
 
   @ApiPropertyOptional({ example: null, nullable: true })
   banner: string | null

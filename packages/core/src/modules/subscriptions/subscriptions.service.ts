@@ -9,6 +9,8 @@ import { AuditService } from '../admin/audit.service'
 import { CreateSubscriptionDto } from './dto/create-subscription.dto'
 import { Subscription } from './entities/subscription.entity'
 import dayjs from 'dayjs'
+import { InternalEventsService } from '../webhooks/internal-events.service'
+import { AccessCacheService } from '../../shared/cache/access-cache.service'
 
 @Injectable()
 export class SubscriptionsService {
@@ -21,6 +23,8 @@ export class SubscriptionsService {
     @Inject(forwardRef(() => InvoicesService))
     private readonly invoices: InvoicesService,
     private readonly audit: AuditService,
+    private readonly internalEvents: InternalEventsService,
+    private readonly accessCache: AccessCacheService,
   ) {}
 
   async create(dto: CreateSubscriptionDto, actorId?: string): Promise<Subscription> {
@@ -134,6 +138,19 @@ export class SubscriptionsService {
       }
     }
     // Se não for imediato, licença permanece até expirar naturalmente
+
+    await this.internalEvents.dispatch({
+      productId: sub.productId,
+      customerId: sub.customerId,
+      eventType: 'subscription.canceled',
+      payload: {
+        subscriptionId,
+        reason,
+        immediate,
+        status: 'canceled',
+      },
+    })
+    this.accessCache.invalidateStatus(sub.customerId, sub.productId)
 
     await this.audit.log({
       actorType: actorId ? 'admin' : 'system',

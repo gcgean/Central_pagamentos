@@ -5,8 +5,5 @@
   "transform": { "^.+\\.(t|j)s$": "ts-jest" },
   "collectCoverageFrom": ["src/**/*.(t|j)s"],
   "coverageDirectory": "coverage",
-  "testEnvironment": "node",
-  "moduleNameMapper": {
-    "^dayjs$": "<rootDir>/node_modules/dayjs/dayjs.min.js"
-  }
+  "testEnvironment": "node"
 }

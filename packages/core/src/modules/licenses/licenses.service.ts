@@ -6,6 +6,7 @@ import { InternalEventsService } from '../webhooks/internal-events.service'
 import { AuditService } from '../admin/audit.service'
 import { License } from './entities/license.entity'
 import dayjs from 'dayjs'
+import { AccessCacheService } from '../../shared/cache/access-cache.service'
 
 export interface EmitLicenseParams {
   customerId: string
@@ -31,6 +32,7 @@ export class LicensesService {
     private readonly repo: LicensesRepository,
     private readonly internalEvents: InternalEventsService,
     private readonly audit: AuditService,
+    private readonly accessCache: AccessCacheService,
   ) {}
 
   // ─── Emitir / Renovar licença ─────────────────────────────────────────────
@@ -84,6 +86,7 @@ export class LicensesService {
       entityId: license.id,
       afterData: license,
     })
+    this.accessCache.invalidateStatus(params.customerId, params.productId)
 
     return license
   }
@@ -116,6 +119,7 @@ export class LicensesService {
       eventType: 'license.renewed',
       payload: { licenseId, expiresAt: params.expiresAt },
     })
+    this.accessCache.invalidateStatus(license.customerId, license.productId)
 
     return updated
   }
@@ -157,6 +161,7 @@ export class LicensesService {
       beforeData: license,
       afterData: updated,
     })
+    this.accessCache.invalidateStatus(license.customerId, license.productId)
 
     return updated
   }
@@ -188,6 +193,7 @@ export class LicensesService {
       beforeData: license,
       afterData: updated,
     })
+    this.accessCache.invalidateStatus(license.customerId, license.productId)
 
     return updated
   }
@@ -219,6 +225,7 @@ export class LicensesService {
       beforeData: license,
       afterData: updated,
     })
+    this.accessCache.invalidateStatus(license.customerId, license.productId)
 
     return updated
   }

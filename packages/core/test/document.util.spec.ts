@@ -1,4 +1,5 @@
 import { validateCPF, validateCNPJ, cleanDocument, formatCPF, formatCNPJ } from '../src/shared/utils/document.util'
+import { describe, it, expect } from '@jest/globals'
 
 describe('Document Utils', () => {
 
@@ -22,7 +23,7 @@ describe('Document Utils', () => {
 
     it('deve rejeitar CPF com dígito verificador inválido', () => {
       expect(validateCPF('12345678900')).toBe(false)
-      expect(validateCPF('98765432100')).toBe(false)
+      expect(validateCPF('12312312312')).toBe(false)
     })
   })
 
@@ -30,7 +31,6 @@ describe('Document Utils', () => {
 
   describe('validateCNPJ()', () => {
     it('deve aceitar CNPJ válido', () => {
-      expect(validateCNPJ('12345678000190')).toBe(true)
       expect(validateCNPJ('11222333000181')).toBe(true)
     })
 

@@ -118,7 +118,9 @@ export class CheckoutService {
       return {
         chargeId: localCharge.id,
         externalChargeId: preference.id,
+        status: localCharge.status,
         checkoutUrl,
+        pixCode: null,
         pixQrCode: null,
         pixPayload: null,
         boletoUrl: null,
@@ -162,7 +164,9 @@ export class CheckoutService {
     return {
       chargeId:         localCharge.id,
       externalChargeId: String(charge.id),
+      status:           localCharge.status,
       checkoutUrl:      null,
+      pixCode:          pixData?.qrCode ?? null,
       pixQrCode:        pixData?.qrCodeBase64 ?? null,
       pixPayload:       pixData?.qrCode ?? null,
       boletoUrl:        null,
@@ -237,7 +241,9 @@ export class CheckoutService {
     return {
       chargeId:         localCharge.id,
       externalChargeId: charge.id,
+      status:           localCharge.status,
       checkoutUrl:      charge.invoiceUrl,
+      pixCode:          pixPayload ?? null,
       pixQrCode:        pixQrCode ?? null,
       pixPayload:       pixPayload ?? null,
       boletoUrl:        null,

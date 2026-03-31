@@ -19,6 +19,7 @@ import { SettingsModule } from './modules/settings/settings.module'
 import { HealthModule } from './modules/health/health.module'
 import { DatabaseModule } from './shared/database/database.module'
 import { QueueModule } from './shared/queue/queue.module'
+import { AccessCacheModule } from './shared/cache/access-cache.module'
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { QueueModule } from './shared/queue/queue.module'
     }]),
     DatabaseModule,
     QueueModule,
+    AccessCacheModule,
     CustomersModule,
     ProductsModule,
     PlansModule,

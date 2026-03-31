@@ -5,10 +5,12 @@ import { InternalEventsService } from '../src/modules/webhooks/internal-events.s
 import { AuditService } from '../src/modules/admin/audit.service'
 import { NotFoundException } from '@nestjs/common'
 import dayjs from 'dayjs'
+import { describe, it, expect, beforeEach, jest } from '@jest/globals'
+import { AccessCacheService } from '../src/shared/cache/access-cache.service'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
-const mockRepo = {
+const mockRepo: any = {
   create: jest.fn(),
   findById: jest.fn(),
   findActiveByCustomerAndProduct: jest.fn(),
@@ -17,8 +19,9 @@ const mockRepo = {
   update: jest.fn(),
 }
 
-const mockEvents = { dispatch: jest.fn() }
-const mockAudit  = { log: jest.fn() }
+const mockEvents: any = { dispatch: jest.fn() }
+const mockAudit: any  = { log: jest.fn() }
+const mockAccessCache: any = { invalidateStatus: jest.fn(), invalidateCustomer: jest.fn() }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +60,7 @@ describe('LicensesService', () => {
         { provide: LicensesRepository,    useValue: mockRepo   },
         { provide: InternalEventsService, useValue: mockEvents },
         { provide: AuditService,          useValue: mockAudit  },
+        { provide: AccessCacheService,    useValue: mockAccessCache },
       ],
     }).compile()
 
@@ -91,6 +95,7 @@ describe('LicensesService', () => {
     it('deve RENOVAR (não criar) quando já existe licença ativa — RN04 isolamento', async () => {
       const existing = makeLicense()
       mockRepo.findActiveByCustomerAndProduct.mockResolvedValue(existing)
+      mockRepo.findById.mockResolvedValue(existing)
       mockRepo.update.mockResolvedValue({ ...existing, expiresAt: dayjs().add(60, 'day').toDate() })
 
       await service.emit({
@@ -125,7 +130,7 @@ describe('LicensesService', () => {
         graceDays:  7,
       })
 
-      const call = mockRepo.create.mock.calls[0][0]
+      const call: any = mockRepo.create.mock.calls[0][0]
       const expectedGrace = dayjs(expiresAt).add(7, 'day').toDate()
 
       expect(dayjs(call.graceUntil).diff(expectedGrace, 'minute')).toBeLessThan(1)
@@ -143,7 +148,7 @@ describe('LicensesService', () => {
         expiresAt:  null,
       })
 
-      const call = mockRepo.create.mock.calls[0][0]
+      const call: any = mockRepo.create.mock.calls[0][0]
       expect(call.expiresAt).toBeNull()
       expect(call.graceUntil).toBeNull()
     })

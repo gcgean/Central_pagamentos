@@ -1,13 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { AccessService } from '../src/modules/access/access.module'
+import { AccessService } from '../src/modules/access/access.service'
 import { LicensesService } from '../src/modules/licenses/licenses.service'
 import { CustomersService } from '../src/modules/customers/customers.service'
+import { CustomersRepository } from '../src/modules/customers/customers.repository'
 import { ProductsService } from '../src/modules/products/products.service'
 import dayjs from 'dayjs'
+import { describe, it, expect, beforeEach, jest } from '@jest/globals'
+import { AccessCacheService } from '../src/shared/cache/access-cache.service'
 
-const mockLicenses  = { findByCustomerAndProduct: jest.fn(), findAllByCustomer: jest.fn() }
-const mockCustomers = { findById: jest.fn() }
-const mockProducts  = { findByCode: jest.fn() }
+const mockLicenses: any  = { findByCustomerAndProduct: jest.fn(), findAllByCustomer: jest.fn() }
+const mockCustomers: any = { findById: jest.fn() }
+const mockProducts: any  = { findByCode: jest.fn() }
+const mockCustomersRepo: any = { findByDocument: jest.fn(), findByEmail: jest.fn(), create: jest.fn() }
+const mockAccessCache = new AccessCacheService()
 
 function makeCustomer(overrides = {}) {
   return { id: 'cus-001', status: 'active', legalName: 'Teste Ltda', ...overrides }
@@ -45,6 +50,8 @@ describe('AccessService', () => {
         { provide: LicensesService,  useValue: mockLicenses  },
         { provide: CustomersService, useValue: mockCustomers },
         { provide: ProductsService,  useValue: mockProducts  },
+        { provide: CustomersRepository, useValue: mockCustomersRepo },
+        { provide: AccessCacheService, useValue: mockAccessCache },
       ],
     }).compile()
 

@@ -11,6 +11,7 @@ import {
   ResolveAccessResponseDto,
 } from './dto/resolve-access.dto'
 import dayjs from 'dayjs'
+import { AccessCacheService } from '../../shared/cache/access-cache.service'
 
 export interface AccessValidationResult {
   customerId: string
@@ -35,6 +36,7 @@ export class AccessService {
     private readonly customers: CustomersService,
     private readonly customersRepo: CustomersRepository,
     private readonly products: ProductsService,
+    private readonly accessCache: AccessCacheService,
   ) {}
 
   // ─── Endpoint legado: validate por customerId + productCode ───────────────
@@ -167,6 +169,8 @@ export class AccessService {
         trialEndAt: null,
         licenseEndAt: null,
         daysLeft: null,
+        reason: 'invalid_document',
+        features: null,
         canAccess: false,
         banner: 'Documento inválido. Verifique o CPF ou CNPJ informado.',
       }
@@ -213,6 +217,11 @@ export class AccessService {
           trialEndAt: null,
           licenseEndAt: activeLicense.expiresAt?.toISOString() ?? null,
           daysLeft,
+          reason: 'licensed',
+          features: {
+            ...(activeLicense.featureSet ?? {}),
+            max_users: activeLicense.maxUsers,
+          },
           canAccess: true,
           banner: null,
         }
@@ -231,6 +240,11 @@ export class AccessService {
             trialEndAt: null,
             licenseEndAt: activeLicense.graceUntil.toISOString(),
             daysLeft,
+            reason: 'grace_period',
+            features: {
+              ...(activeLicense.featureSet ?? {}),
+              max_users: activeLicense.maxUsers,
+            },
             canAccess: true,
             banner: `Seu acesso está em período de carência. Regularize o pagamento. Restam ${daysLeft} dia(s).`,
           }
@@ -252,6 +266,11 @@ export class AccessService {
           trialEndAt: activeLicense.expiresAt?.toISOString() ?? null,
           licenseEndAt: null,
           daysLeft,
+          reason: 'trial_active',
+          features: {
+            ...(activeLicense.featureSet ?? {}),
+            max_users: activeLicense.maxUsers,
+          },
           canAccess: true,
           banner: `Você está no período de avaliação gratuita. Restam ${daysLeft} dia(s).`,
         }
@@ -305,6 +324,11 @@ export class AccessService {
         trialEndAt: expiresAt.toISOString(),
         licenseEndAt: null,
         daysLeft: product.trialDays,
+        reason: 'trial_active',
+        features: {
+          ...(trialLic.featureSet ?? {}),
+          max_users: trialLic.maxUsers,
+        },
         canAccess: true,
         banner: `Bem-vindo! Você tem ${product.trialDays} dias de avaliação gratuita.`,
       }
@@ -320,16 +344,28 @@ export class AccessService {
   // Não cria clientes nem inicia trials — apenas informa o estado atual.
   //
   async getAccessStatus(customerId: string, productId: string): Promise<AccessStatusResponseDto> {
+    const cacheKey = this.accessCache.buildStatusKey(customerId, productId)
+    const cached = this.accessCache.getStatus(cacheKey)
+    if (cached) {
+      return cached
+    }
+
     // Verificar cliente
     let customer
     try {
       customer = await this.customers.findById(customerId)
     } catch {
-      return this.buildStatusResponse('blocked', false, null, null, null, 'customer_not_found', null)
+      return this.cacheStatus(
+        cacheKey,
+        this.buildStatusResponse(customerId, productId, null, 'blocked', false, null, null, null, 'customer_not_found', null, null),
+      )
     }
 
     if (customer.status === 'blocked') {
-      return this.buildStatusResponse('blocked', false, null, null, null, 'customer_blocked', null)
+      return this.cacheStatus(
+        cacheKey,
+        this.buildStatusResponse(customerId, productId, null, 'blocked', false, null, null, null, 'customer_blocked', null, null),
+      )
     }
 
     // Verificar produto
@@ -337,7 +373,10 @@ export class AccessService {
     try {
       product = await this.products.findById(productId)
     } catch {
-      return this.buildStatusResponse('blocked', false, null, null, null, 'product_not_found', null)
+      return this.cacheStatus(
+        cacheKey,
+        this.buildStatusResponse(customerId, productId, null, 'blocked', false, null, null, null, 'product_not_found', null, null),
+      )
     }
 
     // Verificar licença ativa (inclui suspended para carência)
@@ -347,22 +386,63 @@ export class AccessService {
       const isPaid = activeLicense.originType !== 'trial'
 
       if (activeLicense.status === 'revoked') {
-        return this.buildStatusResponse('blocked', false, null, null, null, 'license_revoked', null)
+        return this.cacheStatus(
+          cacheKey,
+          this.buildStatusResponse(
+            customerId,
+            productId,
+            activeLicense.id,
+            'blocked',
+            false,
+            null,
+            null,
+            null,
+            'license_revoked',
+            null,
+            null,
+          ),
+        )
       }
 
       if (activeLicense.status === 'suspended') {
         if (activeLicense.graceUntil && dayjs().isBefore(activeLicense.graceUntil)) {
           const daysLeft = Math.max(0, dayjs(activeLicense.graceUntil).diff(dayjs(), 'day'))
-          return this.buildStatusResponse(
-            'licensed', true,
-            null,
-            activeLicense.graceUntil.toISOString(),
-            daysLeft,
-            'grace_period',
-            `Seu acesso está em carência. Regularize o pagamento. Restam ${daysLeft} dia(s).`,
+          return this.cacheStatus(
+            cacheKey,
+            this.buildStatusResponse(
+              customerId,
+              productId,
+              activeLicense.id,
+              'licensed',
+              true,
+              null,
+              activeLicense.graceUntil.toISOString(),
+              daysLeft,
+              'grace_period',
+              `Seu acesso está em carência. Regularize o pagamento. Restam ${daysLeft} dia(s).`,
+              {
+                ...(activeLicense.featureSet ?? {}),
+                max_users: activeLicense.maxUsers,
+              },
+            ),
           )
         }
-        return this.buildStatusResponse('blocked', false, null, null, null, 'license_suspended', null)
+        return this.cacheStatus(
+          cacheKey,
+          this.buildStatusResponse(
+            customerId,
+            productId,
+            activeLicense.id,
+            'blocked',
+            false,
+            null,
+            null,
+            null,
+            'license_suspended',
+            null,
+            null,
+          ),
+        )
       }
 
       if (activeLicense.status === 'active') {
@@ -370,13 +450,24 @@ export class AccessService {
           const daysLeft = activeLicense.expiresAt
             ? Math.max(0, dayjs(activeLicense.expiresAt).diff(dayjs(), 'day'))
             : null
-          return this.buildStatusResponse(
-            'licensed', true,
-            null,
-            activeLicense.expiresAt?.toISOString() ?? null,
-            daysLeft,
-            'licensed',
-            null,
+          return this.cacheStatus(
+            cacheKey,
+            this.buildStatusResponse(
+              customerId,
+              productId,
+              activeLicense.id,
+              'licensed',
+              true,
+              null,
+              activeLicense.expiresAt?.toISOString() ?? null,
+              daysLeft,
+              'licensed',
+              null,
+              {
+                ...(activeLicense.featureSet ?? {}),
+                max_users: activeLicense.maxUsers,
+              },
+            ),
           )
         }
 
@@ -384,13 +475,25 @@ export class AccessService {
         const daysLeft = activeLicense.expiresAt
           ? Math.max(0, dayjs(activeLicense.expiresAt).diff(dayjs(), 'day'))
           : null
-        return this.buildStatusResponse(
-          'trial', true,
-          activeLicense.startsAt.toISOString(),
-          activeLicense.expiresAt?.toISOString() ?? null,
-          daysLeft,
-          'trial_active',
-          `Você está no período de avaliação gratuita. Restam ${daysLeft} dia(s).`,
+        return this.cacheStatus(
+          cacheKey,
+          this.buildStatusResponse(
+            customerId,
+            productId,
+            activeLicense.id,
+            'trial',
+            true,
+            activeLicense.expiresAt?.toISOString() ?? null,
+            null,
+            daysLeft,
+            'trial_active',
+            `Você está no período de avaliação gratuita. Restam ${daysLeft} dia(s).`,
+            {
+              ...(activeLicense.featureSet ?? {}),
+              max_users: activeLicense.maxUsers,
+            },
+            activeLicense.startsAt.toISOString(),
+          ),
         )
       }
     }
@@ -398,24 +501,41 @@ export class AccessService {
     // Verificar trial expirado
     const trialLicense = await this.licenses.findTrialByCustomerAndProduct(customerId, productId)
     if (trialLicense) {
-      return this.buildStatusResponse(
-        'blocked', false,
-        trialLicense.startsAt.toISOString(),
-        trialLicense.expiresAt?.toISOString() ?? null,
-        0,
-        'trial_expired',
-        'Seu período de avaliação expirou. Adquira uma licença para continuar usando o sistema.',
+      return this.cacheStatus(
+        cacheKey,
+        this.buildStatusResponse(
+          customerId,
+          productId,
+          trialLicense.id,
+          'blocked',
+          false,
+          trialLicense.expiresAt?.toISOString() ?? null,
+          null,
+          0,
+          'trial_expired',
+          'Seu período de avaliação expirou. Adquira uma licença para continuar usando o sistema.',
+          null,
+          trialLicense.startsAt.toISOString(),
+        ),
       )
     }
 
     // Sem nenhum vínculo
-    return this.buildStatusResponse(
-      'no_license', false,
+    return this.cacheStatus(
+      cacheKey,
+      this.buildStatusResponse(
+      customerId,
+      productId,
+      null,
+      'no_license',
+      false,
       null, null, null,
       'no_license',
       product.trialDays > 0
         ? 'Acesse o sistema para iniciar seu período de avaliação gratuita.'
         : null,
+      null,
+      ),
     )
   }
 
@@ -447,12 +567,17 @@ export class AccessService {
       trialEndAt: extra?.trialEndAt ?? null,
       licenseEndAt: null,
       daysLeft: null,
+      reason,
+      features: null,
       canAccess: false,
       banner: banners[reason] ?? banners['blocked'],
     }
   }
 
   private buildStatusResponse(
+    customerId: string,
+    productId: string,
+    licenseId: string | null,
     accessStatus: AccessStatus,
     canAccess: boolean,
     trialEndAt: string | null,
@@ -460,15 +585,27 @@ export class AccessService {
     daysLeft: number | null,
     reason: string,
     banner: string | null,
+    features: Record<string, unknown> | null = null,
+    trialStartedAt: string | null = null,
   ): AccessStatusResponseDto {
     return {
+      customerId,
+      productId,
+      licenseId,
       accessStatus,
       canAccess,
+      trialStartedAt,
       trialEndAt,
       licenseEndAt,
       daysLeft,
       reason,
+      features,
       banner,
     }
+  }
+
+  private cacheStatus(cacheKey: string, data: AccessStatusResponseDto): AccessStatusResponseDto {
+    this.accessCache.setStatus(cacheKey, data)
+    return data
   }
 }

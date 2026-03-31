@@ -1,0 +1,175 @@
+{
+  "info": {
+    "name": "Hub Billing - Contrato Integracao P0",
+    "_postman_id": "4e5c1d92-4a39-44b8-b89f-0f7f4d9c6fb1",
+    "description": "Colecao de contrato para endpoints P0 do Hub Billing (producao).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3005/api/v1" },
+    { "key": "apiKey", "value": "hub_live_xxxxxxxxxxxxxxxxxxxx" },
+    { "key": "adminToken", "value": "" },
+    { "key": "customerId", "value": "" },
+    { "key": "productId", "value": "" },
+    { "key": "productCode", "value": "" },
+    { "key": "orderId", "value": "" },
+    { "key": "subscriptionId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth - Login Admin",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"admin@exemplo.com.br\",\n  \"password\": \"SUA_SENHA_FORTE\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Access - Resolve",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/access/resolve",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"document\": \"123.456.789-09\",\n  \"personType\": \"PF\",\n  \"productId\": \"{{productId}}\",\n  \"name\": \"Maria Oliveira\",\n  \"email\": \"maria@exemplo.com.br\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Access - Status",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-API-Key", "value": "{{apiKey}}" }],
+        "url": "{{baseUrl}}/access/status?customerId={{customerId}}&productId={{productId}}"
+      }
+    },
+    {
+      "name": "Access - Entitlements",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-API-Key", "value": "{{apiKey}}" }],
+        "url": "{{baseUrl}}/access/entitlements/{{customerId}}"
+      }
+    },
+    {
+      "name": "Access - Customer Resolve",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-API-Key", "value": "{{apiKey}}" }],
+        "url": "{{baseUrl}}/access/customers/resolve?document=12345678909"
+      }
+    },
+    {
+      "name": "Access - Customer Upsert",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "Idempotency-Key", "value": "satellite-upsert-001" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/access/customers/upsert",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"personType\": \"PJ\",\n  \"document\": \"11.222.333/0001-81\",\n  \"legalName\": \"Empresa Exemplo LTDA\",\n  \"email\": \"financeiro@empresa.com.br\",\n  \"phone\": \"11999999999\",\n  \"addressZip\": \"60000-000\",\n  \"addressStreet\": \"Rua Central\",\n  \"addressNumber\": \"100\",\n  \"addressDistrict\": \"Centro\",\n  \"addressCity\": \"Fortaleza\",\n  \"addressState\": \"CE\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Access - Legacy Validate",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-API-Key", "value": "{{apiKey}}" }],
+        "url": "{{baseUrl}}/access/customer/{{customerId}}/product/{{productCode}}"
+      }
+    },
+    {
+      "name": "Orders - Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/orders",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"productId\": \"{{productId}}\",\n  \"contractedAmount\": 9900\n}"
+        }
+      }
+    },
+    {
+      "name": "Orders - Checkout",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/orders/{{orderId}}/checkout",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"billingType\": \"PIX\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Subscriptions - Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/subscriptions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"productId\": \"{{productId}}\",\n  \"planId\": \"00000000-0000-0000-0000-000000000000\",\n  \"contractedAmount\": 9900\n}"
+        }
+      }
+    },
+    {
+      "name": "Subscriptions - Checkout",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/subscriptions/{{subscriptionId}}/checkout",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"billingType\": \"PIX\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Payments - Charges By Origin",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": "{{baseUrl}}/payments/charges?originType=order&originId={{orderId}}"
+      }
+    },
+    {
+      "name": "Webhook Inbound - Gateway",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/webhooks/gateway/mercadopago",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"action\": \"payment.updated\",\n  \"data\": { \"id\": \"123456\" }\n}"
+        }
+      }
+    }
+  ]
+}
