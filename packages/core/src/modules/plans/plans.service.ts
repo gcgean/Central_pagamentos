@@ -27,6 +27,14 @@ export class PlansService {
     return this.repo.update(id, { status: 'archived' })
   }
 
+  async update(productId: string, id: string, data: any) {
+    const plan = await this.findById(id)
+    if (plan.productId !== productId) {
+      throw new NotFoundException(`Plano ${id} não pertence ao produto ${productId}`)
+    }
+    return this.repo.update(id, data)
+  }
+
   async renew(id: string, data: any) {
     return this.repo.update(id, data)
   }

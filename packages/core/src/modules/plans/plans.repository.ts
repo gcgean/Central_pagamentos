@@ -39,7 +39,15 @@ export class PlansRepository {
   async update(id: string, data: any) {
     const [row] = await this.sql`
       UPDATE plans SET
-        status     = COALESCE(${data.status ?? null}, status),
+        code          = COALESCE(${data.code ?? null}, code),
+        name          = COALESCE(${data.name ?? null}, name),
+        interval_unit = COALESCE(${data.intervalUnit ?? null}, interval_unit),
+        interval_count= COALESCE(${data.intervalCount ?? null}, interval_count),
+        amount        = COALESCE(${data.amount ?? null}, amount),
+        currency      = COALESCE(${data.currency ?? null}, currency),
+        max_users     = COALESCE(${data.maxUsers ?? null}, max_users),
+        feature_set   = COALESCE(${data.featureSet ?? null}, feature_set),
+        status        = COALESCE(${data.status ?? null}, status),
         updated_at = NOW()
       WHERE id = ${id}
       RETURNING *

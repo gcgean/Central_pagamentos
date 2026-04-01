@@ -23,6 +23,16 @@ export class PlansController {
     return this.service.findByProduct(productId)
   }
 
+  @Put(':planId')
+  @ApiOperation({ summary: 'Editar plano de um produto' })
+  update(
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('planId', ParseUUIDPipe) planId: string,
+    @Body() dto: any,
+  ) {
+    return this.service.update(productId, planId, dto)
+  }
+
   @Put(':planId/archive')
   @ApiOperation({ summary: 'Arquivar plano (apenas se sem assinaturas ativas)' })
   archive(@Param('planId', ParseUUIDPipe) planId: string) {

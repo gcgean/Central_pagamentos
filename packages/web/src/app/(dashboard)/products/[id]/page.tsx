@@ -15,7 +15,7 @@ import { Select } from '@/components/ui/Select'
 import { Modal } from '@/components/ui/Modal'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { ArrowLeft, Plus, Archive, Package } from 'lucide-react'
+import { ArrowLeft, Plus, Archive, Package, Pencil } from 'lucide-react'
 
 interface Product {
   id: string
@@ -35,6 +35,7 @@ interface Plan {
   intervalUnit?: string
   intervalCount: number
   maxUsers?: number
+  status?: string
   isArchived: boolean
   createdAt: string
 }
@@ -61,8 +62,12 @@ export default function ProductDetailPage() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [showPlanModal, setShowPlanModal] = useState(false)
+  const [showEditPlanModal, setShowEditPlanModal] = useState(false)
+  const [editingPlan, setEditingPlan] = useState<Plan | null>(null)
   const [error, setError] = useState('')
   const [planError, setPlanError] = useState('')
+
+  const isArchived = (plan: Plan) => plan.isArchived || plan.status === 'archived'
 
   const { data: product, isLoading } = useQuery<Product>({
     queryKey: ['product', id],
@@ -119,6 +124,46 @@ export default function ProductDetailPage() {
       setPlanError(axiosErr?.response?.data?.message ?? 'Erro ao criar plano')
     },
   })
+
+  const updatePlanMutation = useMutation({
+    mutationFn: (data: PlanFormData) => {
+      if (!editingPlan) throw new Error('Plano não selecionado')
+      const { interval, ...rest } = data
+      const payload = {
+        ...rest,
+        intervalUnit: interval,
+        amount: Math.round(parseFloat(data.amount) * 100),
+        intervalCount: Number(data.intervalCount),
+        maxUsers: data.maxUsers ? Number(data.maxUsers) : undefined,
+      }
+      return api.put(`/products/${id}/plans/${editingPlan.id}`, payload)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plans', id] })
+      setShowEditPlanModal(false)
+      setEditingPlan(null)
+      reset({ interval: 'month', intervalCount: 1 })
+      setPlanError('')
+    },
+    onError: (err: unknown) => {
+      const axiosErr = err as { response?: { data?: { message?: string } } }
+      setPlanError(axiosErr?.response?.data?.message ?? 'Erro ao atualizar plano')
+    },
+  })
+
+  const openEditPlanModal = (plan: Plan) => {
+    setEditingPlan(plan)
+    setPlanError('')
+    reset({
+      code: plan.code,
+      name: plan.name,
+      amount: (plan.amount / 100).toFixed(2),
+      interval: (plan.intervalUnit ?? plan.interval ?? 'month') as 'day' | 'month' | 'year',
+      intervalCount: plan.intervalCount,
+      maxUsers: plan.maxUsers,
+    })
+    setShowEditPlanModal(true)
+  }
 
   if (isLoading) return <Spinner />
   if (!product) return <div className="text-gray-500 text-sm">Produto não encontrado.</div>
@@ -209,21 +254,30 @@ export default function ProductDetailPage() {
                       </td>
                       <td className="px-6 py-3 text-sm text-gray-500">{plan.maxUsers ?? '—'}</td>
                       <td className="px-6 py-3">
-                        <Badge variant={plan.isArchived ? 'gray' : 'green'}>
-                          {plan.isArchived ? 'Arquivado' : 'Ativo'}
+                        <Badge variant={isArchived(plan) ? 'gray' : 'green'}>
+                          {isArchived(plan) ? 'Arquivado' : 'Ativo'}
                         </Badge>
                       </td>
                       <td className="px-6 py-3 text-right">
-                        {!plan.isArchived && (
+                        <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => archivePlanMutation.mutate(plan.id)}
-                            loading={archivePlanMutation.isPending}
+                            onClick={() => openEditPlanModal(plan)}
                           >
-                            <Archive size={14} /> Arquivar
+                            <Pencil size={14} /> Editar
                           </Button>
-                        )}
+                          {!isArchived(plan) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => archivePlanMutation.mutate(plan.id)}
+                              loading={archivePlanMutation.isPending}
+                            >
+                              <Archive size={14} /> Arquivar
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -306,6 +360,91 @@ export default function ProductDetailPage() {
             </Button>
             <Button type="submit" loading={createPlanMutation.isPending}>
               Criar Plano
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Plan Modal */}
+      <Modal
+        open={showEditPlanModal}
+        onClose={() => { setShowEditPlanModal(false); setEditingPlan(null); reset({ interval: 'month', intervalCount: 1 }); setPlanError('') }}
+        title="Editar Plano"
+      >
+        {planError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-700">{planError}</p>
+          </div>
+        )}
+        <form onSubmit={handleSubmit((data) => updatePlanMutation.mutate(data))} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              id="plan-edit-code"
+              label="Código"
+              placeholder="BASICO"
+              error={planErrors.code?.message}
+              {...register('code', {
+                onChange: (e) => { e.target.value = e.target.value.toUpperCase() },
+              })}
+            />
+            <Input
+              id="plan-edit-name"
+              label="Nome"
+              placeholder="Plano Básico"
+              error={planErrors.name?.message}
+              {...register('name')}
+            />
+          </div>
+          <Input
+            id="plan-edit-amount"
+            label="Valor (R$)"
+            type="number"
+            step="0.01"
+            min="0.01"
+            placeholder="99.90"
+            error={planErrors.amount?.message}
+            {...register('amount')}
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <Select
+              id="plan-edit-interval"
+              label="Intervalo"
+              options={[
+                { value: 'day', label: 'Dia(s)' },
+                { value: 'month', label: 'Mês(es)' },
+                { value: 'year', label: 'Ano(s)' },
+              ]}
+              error={planErrors.interval?.message}
+              {...register('interval')}
+            />
+            <Input
+              id="plan-edit-intervalCount"
+              label="Quantidade"
+              type="number"
+              min="1"
+              placeholder="1"
+              error={planErrors.intervalCount?.message}
+              {...register('intervalCount')}
+            />
+          </div>
+          <Input
+            id="plan-edit-maxUsers"
+            label="Máx. de Usuários (opcional)"
+            type="number"
+            min="1"
+            placeholder="10"
+            {...register('maxUsers')}
+          />
+          <div className="flex gap-3 justify-end pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setShowEditPlanModal(false); setEditingPlan(null); reset({ interval: 'month', intervalCount: 1 }); setPlanError('') }}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" loading={updatePlanMutation.isPending}>
+              Salvar Alterações
             </Button>
           </div>
         </form>
