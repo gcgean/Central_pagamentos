@@ -33,6 +33,21 @@ export class PlansController {
     return this.service.update(productId, planId, dto)
   }
 
+  @Put(':planId/activate')
+  @ApiOperation({ summary: 'Ativar plano' })
+  activate(
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('planId', ParseUUIDPipe) planId: string,
+  ) {
+    return this.service.activate(productId, planId)
+  }
+
+  @Put(':planId/deactivate')
+  @ApiOperation({ summary: 'Desativar plano (apenas se sem assinaturas ativas)' })
+  deactivate(@Param('planId', ParseUUIDPipe) planId: string) {
+    return this.service.deactivate(planId)
+  }
+
   @Put(':planId/archive')
   @ApiOperation({ summary: 'Arquivar plano (apenas se sem assinaturas ativas)' })
   archive(@Param('planId', ParseUUIDPipe) planId: string) {

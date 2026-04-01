@@ -15,7 +15,7 @@ import { Select } from '@/components/ui/Select'
 import { Modal } from '@/components/ui/Modal'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { ArrowLeft, Plus, Archive, Package, Pencil } from 'lucide-react'
+import { ArrowLeft, Plus, Archive, Package, Pencil, Power } from 'lucide-react'
 
 interface Product {
   id: string
@@ -94,6 +94,16 @@ export default function ProductDetailPage() {
   const archivePlanMutation = useMutation({
     mutationFn: (planId: string) => api.put(`/products/${id}/plans/${planId}/archive`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['plans', id] }),
+  })
+
+  const togglePlanStatusMutation = useMutation({
+    mutationFn: ({ planId, activate }: { planId: string; activate: boolean }) =>
+      api.put(`/products/${id}/plans/${planId}/${activate ? 'activate' : 'deactivate'}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['plans', id] }),
+    onError: (err: unknown) => {
+      const axiosErr = err as { response?: { data?: { message?: string } } }
+      setError(axiosErr?.response?.data?.message ?? 'Erro ao atualizar status do plano')
+    },
   })
 
   const { register, handleSubmit, reset, formState: { errors: planErrors } } = useForm<PlanFormData>({
@@ -266,6 +276,16 @@ export default function ProductDetailPage() {
                             onClick={() => openEditPlanModal(plan)}
                           >
                             <Pencil size={14} /> Editar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              togglePlanStatusMutation.mutate({ planId: plan.id, activate: isArchived(plan) })
+                            }
+                            loading={togglePlanStatusMutation.isPending}
+                          >
+                            <Power size={14} /> {isArchived(plan) ? 'Ativar' : 'Desativar'}
                           </Button>
                           {!isArchived(plan) && (
                             <Button
