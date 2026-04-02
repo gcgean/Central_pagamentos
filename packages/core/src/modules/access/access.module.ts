@@ -8,9 +8,10 @@ import { LicensesModule } from '../licenses/licenses.module'
 import { CustomersModule } from '../customers/customers.module'
 import { ProductsModule } from '../products/products.module'
 import { IntegrationsModule } from '../integrations/integrations.module'
+import { PlansModule } from '../plans/plans.module'
 
 @Module({
-  imports: [LicensesModule, CustomersModule, ProductsModule, IntegrationsModule],
+  imports: [LicensesModule, CustomersModule, ProductsModule, IntegrationsModule, PlansModule],
   controllers: [AccessController, ExternalCustomersController],
   providers: [AccessService, ExternalCustomersService, ApiKeyGuard],
 })

@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Put, Param, Body, ParseUUIDPipe, UseGuards } from '@nestjs/common'
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
+import { Controller, Get, Post, Put, Param, Body, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common'
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { AdminJwtGuard } from '../../shared/guards/admin-jwt.guard'
 import { PlansService } from './plans.service'
 
@@ -19,8 +19,21 @@ export class PlansController {
 
   @Get()
   @ApiOperation({ summary: 'Listar planos de um produto' })
-  findAll(@Param('productId', ParseUUIDPipe) productId: string) {
-    return this.service.findByProduct(productId)
+  @ApiQuery({ name: 'status', required: false, enum: ['active', 'archived', 'draft'] })
+  @ApiQuery({ name: 'includeArchived', required: false, example: 'true' })
+  findAll(
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Query('status') status?: string,
+    @Query('includeArchived') includeArchived?: string,
+  ) {
+    const include = includeArchived === undefined
+      ? true
+      : String(includeArchived).toLowerCase() === 'true'
+
+    return this.service.findByProduct(productId, {
+      status,
+      includeArchived: include,
+    })
   }
 
   @Put(':planId')

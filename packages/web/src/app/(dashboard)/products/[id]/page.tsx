@@ -243,7 +243,9 @@ export default function ProductDetailPage() {
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Periodicidade</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Max. Usuários</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3" />
+                    <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase text-right sticky right-0 bg-white z-10">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -268,7 +270,7 @@ export default function ProductDetailPage() {
                           {isArchived(plan) ? 'Arquivado' : 'Ativo'}
                         </Badge>
                       </td>
-                      <td className="px-6 py-3 text-right">
+                      <td className="px-6 py-3 text-right sticky right-0 bg-white">
                         <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="ghost"

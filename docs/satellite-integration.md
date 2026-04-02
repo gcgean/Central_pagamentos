@@ -362,6 +362,83 @@ Resposta:
 
 ---
 
+## Endpoints de planos (catálogo para satélite)
+
+### GET /products/{productId}/plans (JWT Admin)
+
+Retorna o catálogo completo de planos do produto para uso operacional/admin.
+
+```http
+GET /api/v1/products/{productId}/plans?includeArchived=true
+Authorization: Bearer <accessToken>
+```
+
+Filtros:
+- `status=active|archived|draft`
+- `includeArchived=true|false` (padrão: `true`)
+
+Contrato por item:
+
+```json
+{
+  "id": "uuid",
+  "productId": "uuid",
+  "code": "TESTE",
+  "name": "Plano Teste",
+  "description": "Teste por 14 dias...",
+  "amount": 100,
+  "currency": "BRL",
+  "intervalUnit": "month",
+  "intervalCount": 1,
+  "status": "active",
+  "isActive": true,
+  "createdAt": "2026-04-01T00:00:00.000Z",
+  "updatedAt": "2026-04-01T00:00:00.000Z"
+}
+```
+
+Observações de contrato:
+- `amount` é sempre centavos (inteiro).
+- `status` é normalizado para `active|archived|draft`.
+- `isActive` é derivado de `status === "active"`.
+- sistemas satélites devem tratar este endpoint como **fonte de verdade** para `name`, `description`, `amount` e `status` dos planos.
+- se o satélite mantiver mapeamento local de planos (ex.: `HUB_BILLING_PLAN_TESTE`), o merge deve ser feito com prioridade por `planId` (ID do plano no Hub) e somente depois por `code`.
+- não usar tabela estática local para exibição de nome/preço quando este endpoint estiver disponível.
+
+### GET /access/products/{productId}/plans (API Key)
+
+Endpoint público para o sistema satélite montar tela de planos diretamente com dados do Hub.
+
+```http
+GET /api/v1/access/products/{productId}/plans?includeArchived=false
+X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx
+```
+
+Filtros:
+- `status=active|archived|draft`
+- `includeArchived=true|false` (padrão: `false`)
+
+Retorno:
+- Mesmo contrato público de plano (`id`, `code`, `name`, `description`, `amount`, `currency`, `intervalUnit`, `intervalCount`, `status`, `isActive`, `createdAt`, `updatedAt`).
+- A API key só acessa o produto ao qual está vinculada.
+
+### Recomendação de mapeamento no satélite (evitar divergência de plano)
+
+Quando o satélite usa variáveis de ambiente para mapear planos (ex.: TESTE/BÁSICO/INTERMEDIÁRIO), aplicar:
+
+1. Buscar catálogo no Hub (`/products/{productId}/plans`)
+2. Encontrar o plano do satélite pelo `planId` mapeado
+3. Se não encontrar por ID, tentar por `code`
+4. Persistir e exibir os dados do Hub:
+   - `name`
+   - `description`
+   - `amount` (converter de centavos para valor monetário no frontend)
+   - `status` / `isActive`
+
+Assim, se o `code` mudar no Hub, o satélite continua consistente pelo `planId`.
+
+---
+
 ## Regras de Trial
 
 O trial é gerenciado **exclusivamente pelo Hub**. O sistema satélite não controla nem arbitra o trial.
@@ -508,6 +585,26 @@ Resposta de checkout (campos principais para integração):
 GET /api/v1/payments/charges?originType=order&originId={orderId}
 Authorization: Bearer <accessToken>
 ```
+
+Compatibilidade de resposta (obrigatório no satélite):
+
+- o Hub pode retornar:
+  - array na raiz (`[]`)
+  - objeto com `data`
+  - objeto com `items`
+- chaves de identificação possíveis por cobrança:
+  - `chargeId`
+  - `id`
+  - `externalChargeId`
+  - `external_charge_id`
+- quando `status` não vier explicitamente:
+  - `paidAt` => interpretar como `paid`
+  - `canceledAt` => interpretar como `canceled`
+
+Normalização de valor:
+
+- `amount` pode vir em centavos (inteiro).
+- para evitar erro de exibição (`100.00` em vez de `1.00`), normalizar com base no contrato (centavos) e fallback do valor esperado do plano.
 
 ---
 
@@ -688,6 +785,29 @@ async function checkAccessCached(customerId, productId, redis) {
 - Usar API Key por sistema e por ambiente (nunca expor em frontend)
 - Processar webhook de forma idempotente no satélite
 - Tratar retries em falhas de rede e respostas `5xx`
+- Em tela de planos, esconder planos inativos (`status != active`) por padrão
+- Em trial ativo, permitir pagamento antecipado e conversão para pago
+- Em vencimento próximo (`daysLeft <= 5`), destacar aviso de renovação e oferecer atalho direto para pagamento
+
+---
+
+## Suporte Multi-Plataforma (multi-produto)
+
+O Hub foi projetado para atender **múltiplas plataformas satélites** ao mesmo tempo, cada uma com seus próprios produtos e planos.
+
+Diretrizes:
+- Toda integração deve operar por `productId` (nunca fixar regras por nome de produto no satélite).
+- Cada plataforma deve ter sua própria `API Key` vinculada ao produto correto.
+- O satélite deve sempre consumir catálogo oficial de planos pelo Hub (sem fallback local de nome/preço/status).
+- O endpoint `GET /api/v1/access/products/{productId}/plans` respeita escopo da API Key por produto.
+- Novos produtos cadastrados no Hub passam a seguir o mesmo contrato sem mudanças no satélite.
+
+Fluxo recomendado para novas plataformas:
+1. Cadastrar produto no Hub.
+2. Cadastrar planos do produto (`code`, `name`, `description`, `amount`, `status`).
+3. Gerar API Key da integração para o produto.
+4. Integrar `resolve/status/plans` no satélite usando esse `productId`.
+5. Validar checkout/webhooks em homologação antes do go-live.
 
 ---
 

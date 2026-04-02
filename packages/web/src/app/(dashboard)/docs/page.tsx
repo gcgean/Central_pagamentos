@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { Check, Copy, BookOpen, Key, Zap, Webhook, AlertCircle, ChevronRight, ExternalLink, Code2, ShieldCheck } from 'lucide-react'
+import { Check, Copy, BookOpen, Key, Zap, Webhook, AlertCircle, ChevronRight, ExternalLink, Code2, ShieldCheck, Package } from 'lucide-react'
 
 // ── Code Block ────────────────────────────────────────────────────────────────
 
@@ -144,6 +144,7 @@ const navItems = [
   { id: 'customers-ext', label: 'Clientes Externos' },
   { id: 'access',        label: 'Validação Legada' },
   { id: 'entitlements',  label: 'Entitlements' },
+  { id: 'plans-catalog', label: 'Catálogo de Planos' },
   { id: 'payments',      label: 'Pagamentos' },
   { id: 'webhooks',      label: 'Webhooks de Saída' },
   { id: 'webhook-in',    label: 'Webhooks de Entrada' },
@@ -805,6 +806,75 @@ async function loadUserProfile(customerId) {
   // Ex: { SOFTX_PRO: { max_users: 10, export_pdf: true } }
   return allowedProducts
 }`} />
+        </Section>
+
+        <Section id="plans-catalog" title="Catálogo de Planos" icon={<Package size={16} />}>
+          <p className="text-sm text-gray-600 mb-4">
+            Use os endpoints abaixo para montar a vitrine de planos no satélite com dados oficiais do Hub
+            (sem fallback local para nome/preço/status).
+          </p>
+
+          <Alert type="info">
+            <strong>Multi-plataforma:</strong> o contrato é por <code className="font-mono text-xs">productId</code>.
+            Cada satélite deve usar sua própria API Key vinculada ao produto correto e sempre ler catálogo no Hub.
+          </Alert>
+
+          <Endpoint
+            method="GET"
+            path="/products/{productId}/plans"
+            description="Catálogo completo de planos do produto (JWT admin)"
+          >
+            <CodeBlock language="http" code={`GET /api/v1/products/{productId}/plans?includeArchived=true
+Authorization: Bearer <accessToken>`} />
+            <PropTable rows={[
+              { name: 'status', type: `'active' | 'archived' | 'draft'`, required: false, description: 'Filtra pelo status do plano' },
+              { name: 'includeArchived', type: 'boolean', required: false, description: 'Inclui planos arquivados (padrão: true)' },
+            ]} />
+          </Endpoint>
+
+          <Endpoint
+            method="GET"
+            path="/access/products/{productId}/plans"
+            description="Catálogo público para satélite (API Key)"
+          >
+            <CodeBlock language="http" code={`GET /api/v1/access/products/{productId}/plans?includeArchived=false
+X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
+            <PropTable rows={[
+              { name: 'status', type: `'active' | 'archived' | 'draft'`, required: false, description: 'Filtra pelo status do plano' },
+              { name: 'includeArchived', type: 'boolean', required: false, description: 'Inclui planos arquivados (padrão: false)' },
+            ]} />
+          </Endpoint>
+
+          <h3 className="font-semibold text-gray-900 mt-5 mb-3">Contrato por item de plano</h3>
+          <CodeBlock language="json" code={`{
+  "id": "uuid",
+  "productId": "uuid",
+  "code": "TESTE",
+  "name": "Plano Teste",
+  "description": "Teste por 14 dias...",
+  "amount": 100,
+  "currency": "BRL",
+  "intervalUnit": "month",
+  "intervalCount": 1,
+  "status": "active",
+  "isActive": true,
+  "createdAt": "2026-04-01T00:00:00.000Z",
+  "updatedAt": "2026-04-01T00:00:00.000Z"
+}`} />
+
+          <Alert type="info">
+            <strong>Contrato estável:</strong> <code className="font-mono text-xs">amount</code> é sempre em centavos,
+            <code className="font-mono text-xs"> status</code> é normalizado para <code className="font-mono text-xs">active|archived|draft</code>,
+            e <code className="font-mono text-xs">isActive</code> reflete <code className="font-mono text-xs">status === "active"</code>.
+          </Alert>
+
+          <h3 className="font-semibold text-gray-900 mt-5 mb-3">Go-live para novos satélites</h3>
+          <ol className="text-sm text-gray-600 space-y-2 list-decimal list-inside">
+            <li>Cadastrar produto e planos no Hub.</li>
+            <li>Gerar API Key da integração para o produto.</li>
+            <li>Consumir <code className="font-mono text-xs">/access/resolve</code>, <code className="font-mono text-xs">/access/status</code> e <code className="font-mono text-xs">/access/products/{'{productId}'}/plans</code>.</li>
+            <li>Validar checkout e webhooks antes de publicar em produção.</li>
+          </ol>
         </Section>
 
         <Section id="payments" title="Processamento de Pagamentos" icon={<ExternalLink size={16} />}>

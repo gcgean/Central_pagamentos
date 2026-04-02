@@ -8,7 +8,12 @@ export class PlansService {
 
   async create(dto: any) { return this.repo.create(dto) }
 
-  async findByProduct(productId: string) { return this.repo.findByProduct(productId) }
+  async findByProduct(
+    productId: string,
+    filters?: { status?: string; includeArchived?: boolean },
+  ) {
+    return this.repo.findByProduct(productId, filters)
+  }
 
   async findById(id: string) {
     const p = await this.repo.findById(id)

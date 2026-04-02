@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common'
+import { Body, Controller, ForbiddenException, Get, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common'
 import { ApiBody, ApiOperation, ApiQuery, ApiResponse, ApiSecurity, ApiTags } from '@nestjs/swagger'
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler'
 import { ApiKeyGuard } from '../../shared/guards/api-key.guard'
@@ -8,6 +8,7 @@ import {
   ResolveAccessDto,
   ResolveAccessResponseDto,
 } from './dto/resolve-access.dto'
+import { PlansService } from '../plans/plans.service'
 
 @ApiTags('access')
 @ApiSecurity('api-key')
@@ -15,7 +16,10 @@ import {
 @Controller({ path: 'access', version: '1' })
 export class AccessController {
 
-  constructor(private readonly service: AccessService) {}
+  constructor(
+    private readonly service: AccessService,
+    private readonly plans: PlansService,
+  ) {}
 
   // ─── Endpoint legado — mantido para retrocompatibilidade ──────────────────
 
@@ -112,5 +116,49 @@ Use-o para consultas periódicas após o onboarding inicial.
     @Query('productId', ParseUUIDPipe) productId: string,
   ): Promise<AccessStatusResponseDto> {
     return this.service.getAccessStatus(customerId, productId)
+  }
+
+  @Get('products/:productId/plans')
+  @ApiOperation({
+    summary: 'Listar planos públicos de um produto (API Key)',
+    description: 'Endpoint para o satélite montar tela de planos usando dados oficiais do Hub.',
+  })
+  @ApiQuery({ name: 'status', required: false, enum: ['active', 'archived', 'draft'] })
+  @ApiQuery({ name: 'includeArchived', required: false, example: 'false' })
+  async getPublicPlans(
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Query('status') status?: string,
+    @Query('includeArchived') includeArchived?: string,
+    @Req() req?: any,
+  ) {
+    const integrationProductId = req?.productId
+    if (integrationProductId && integrationProductId !== productId) {
+      throw new ForbiddenException('API Key sem permissão para este produto.')
+    }
+
+    const include = includeArchived === undefined
+      ? false
+      : String(includeArchived).toLowerCase() === 'true'
+
+    const plans = await this.plans.findByProduct(productId, {
+      status,
+      includeArchived: include,
+    })
+
+    return plans.map((plan: any) => ({
+      id: plan.id,
+      productId: plan.productId,
+      code: plan.code,
+      name: plan.name,
+      description: plan.description ?? null,
+      amount: plan.amount,
+      currency: plan.currency,
+      intervalUnit: plan.intervalUnit,
+      intervalCount: plan.intervalCount,
+      status: plan.status,
+      isActive: plan.isActive,
+      createdAt: plan.createdAt,
+      updatedAt: plan.updatedAt,
+    }))
   }
 }
