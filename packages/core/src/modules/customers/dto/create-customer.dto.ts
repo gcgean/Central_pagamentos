@@ -1,4 +1,4 @@
-import { IsEnum, IsEmail, IsString, IsOptional, MinLength, MaxLength, Matches } from 'class-validator'
+import { IsEnum, IsEmail, IsString, IsOptional, MinLength, MaxLength, ValidateIf } from 'class-validator'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 
 export enum PersonType { PF = 'PF', PJ = 'PJ' }
@@ -8,11 +8,16 @@ export class CreateCustomerDto {
   @IsEnum(PersonType)
   personType: PersonType
 
-  @ApiProperty({ example: '12.345.678/0001-90', description: 'CPF ou CNPJ (aceita formatado ou somente dígitos)' })
+  @ApiPropertyOptional({
+    example: '12.345.678/0001-90',
+    description: 'CPF ou CNPJ (aceita formatado ou somente dígitos). Opcional quando o cliente não possui documento.',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && String(value).trim() !== '')
   @IsString()
   @MinLength(11)
   @MaxLength(18)
-  document: string
+  document?: string
 
   @ApiProperty({ example: 'Clínica Saúde Ltda', description: 'Nome completo ou Razão Social' })
   @IsString()

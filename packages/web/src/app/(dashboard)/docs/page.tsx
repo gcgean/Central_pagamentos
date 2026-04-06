@@ -314,6 +314,10 @@ HTTP/1.1 200
             O endpoint é <strong>idempotente</strong>: chamadas repetidas com o mesmo documento retornam
             o mesmo estado sem criar duplicidades.
           </p>
+          <Alert type="info">
+            Quando o cliente não possui CPF/CNPJ, envie apenas <code className="font-mono text-xs">name</code> e
+            <code className="font-mono text-xs"> email</code>. O Hub cria um identificador interno automaticamente.
+          </Alert>
 
           <Endpoint
             method="POST"
@@ -322,8 +326,8 @@ HTTP/1.1 200
           >
             <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider mt-4 mb-2">Corpo da requisição</h4>
             <PropTable rows={[
-              { name: 'document',   type: 'string',   required: true,  description: 'CPF ou CNPJ (formatado ou só dígitos)' },
-              { name: 'personType', type: '"PF"|"PJ"', required: true,  description: 'Tipo de pessoa' },
+              { name: 'document',   type: 'string',   required: false, description: 'CPF ou CNPJ (opcional). Sem documento, o Hub usa e-mail como referência.' },
+              { name: 'personType', type: '"PF"|"PJ"', required: false, description: 'Tipo de pessoa (recomendado quando document for enviado)' },
               { name: 'productId',  type: 'uuid',     required: true,  description: 'ID do produto no Hub' },
               { name: 'name',       type: 'string',   required: true,  description: 'Nome completo ou Razão Social' },
               { name: 'email',      type: 'string',   required: true,  description: 'E-mail do cliente' },
@@ -619,6 +623,9 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
             Endpoints auxiliares para verificar a existência de um cliente ou criá-lo de forma
             idempotente, sem iniciar trial ou verificar licença.
           </p>
+          <Alert type="info">
+            Em clientes sem CPF/CNPJ, o fluxo de criação por e-mail também é suportado.
+          </Alert>
 
           <Endpoint
             method="GET"
@@ -646,7 +653,7 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
           >
             <PropTable rows={[
               { name: 'personType',      type: '"PF"|"PJ"', required: true,  description: 'Tipo de pessoa' },
-              { name: 'document',        type: 'string',    required: true,  description: 'CPF ou CNPJ' },
+              { name: 'document',        type: 'string',    required: false, description: 'CPF ou CNPJ (opcional quando e-mail for informado)' },
               { name: 'legalName',       type: 'string',    required: true,  description: 'Nome ou Razão Social' },
               { name: 'email',           type: 'string',    required: true,  description: 'E-mail' },
               { name: 'phone',           type: 'string',    required: false, description: 'Telefone' },
@@ -666,6 +673,11 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
   "addressZip": "60000-000",
   "addressCity": "Fortaleza",
   "addressState": "CE"
+}`} />
+            <CodeBlock language="json" code={`{
+  "personType": "PF",
+  "legalName": "Cliente Internacional",
+  "email": "cliente.sem.documento@exemplo.com"
 }`} />
             <CodeBlock language="json" code={`// Criado com sucesso
 { "exists": true, "source": "created", "customerId": "uuid..." }

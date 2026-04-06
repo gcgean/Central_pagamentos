@@ -52,9 +52,9 @@ const planSchema = z.object({
 type PlanFormData = z.infer<typeof planSchema>
 
 const intervalLabels: Record<string, string> = {
-  day: 'Dia(s)',
-  month: 'Mês(es)',
-  year: 'Ano(s)',
+  day: 'Diario',
+  month: 'Mensal',
+  year: 'Anual',
 }
 
 export default function ProductDetailPage() {
@@ -351,9 +351,9 @@ export default function ProductDetailPage() {
               id="plan-interval"
               label="Intervalo"
               options={[
-                { value: 'day', label: 'Dia(s)' },
-                { value: 'month', label: 'Mês(es)' },
-                { value: 'year', label: 'Ano(s)' },
+                { value: 'month', label: 'Mensal' },
+                { value: 'year', label: 'Anual' },
+                { value: 'day', label: 'Diario' },
               ]}
               error={planErrors.interval?.message}
               {...register('interval')}
@@ -432,9 +432,9 @@ export default function ProductDetailPage() {
               id="plan-edit-interval"
               label="Intervalo"
               options={[
-                { value: 'day', label: 'Dia(s)' },
-                { value: 'month', label: 'Mês(es)' },
-                { value: 'year', label: 'Ano(s)' },
+                { value: 'month', label: 'Mensal' },
+                { value: 'year', label: 'Anual' },
+                { value: 'day', label: 'Diario' },
               ]}
               error={planErrors.interval?.message}
               {...register('interval')}

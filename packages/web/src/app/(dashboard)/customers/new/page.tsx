@@ -15,7 +15,8 @@ import { ArrowLeft } from 'lucide-react'
 
 const schema = z.object({
   personType: z.enum(['PF', 'PJ']),
-  document: z.string().min(11, 'Documento inválido'),
+  document: z.string().optional()
+    .refine((value) => !value || value.replace(/\D/g, '').length >= 11, 'Documento inválido'),
   name: z.string().min(2, 'Nome obrigatório'),
   tradeName: z.string().optional(),
   email: z.string().email('E-mail inválido'),
@@ -45,7 +46,7 @@ export default function NewCustomerPage() {
   const mutation = useMutation({
     mutationFn: (data: FormData) => api.post('/customers', {
       personType:      data.personType,
-      document:        data.document,
+      document:        data.document?.trim() ? data.document : undefined,
       legalName:       data.name,
       tradeName:       data.tradeName || undefined,
       email:           data.email,
@@ -134,7 +135,7 @@ export default function NewCustomerPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
                 id="document"
-                label={personType === 'PF' ? 'CPF' : 'CNPJ'}
+                label={personType === 'PF' ? 'CPF (opcional)' : 'CNPJ (opcional)'}
                 placeholder={personType === 'PF' ? '000.000.000-00' : '00.000.000/0000-00'}
                 error={errors.document?.message}
                 {...register('document')}
@@ -148,6 +149,9 @@ export default function NewCustomerPage() {
                 {...register('email')}
               />
             </div>
+            <p className="text-xs text-gray-500">
+              Se o cliente não possuir CPF/CNPJ, deixe o campo em branco e use apenas o e-mail.
+            </p>
 
             <Input
               id="name"

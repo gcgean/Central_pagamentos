@@ -90,10 +90,10 @@ GET /access/status?customerId=xxx&productId=yyy
 
 ### POST /access/resolve — Resolução centralizada de acesso
 
-Endpoint principal para onboarding. Localiza ou cria o cliente pelo CPF/CNPJ, verifica licença e trial, e retorna a decisão de acesso.
+Endpoint principal para onboarding. Localiza ou cria o cliente pelo CPF/CNPJ (ou por e-mail quando não houver documento), verifica licença e trial, e retorna a decisão de acesso.
 
 **Garantias:**
-- Cliente único por CPF/CNPJ — sem duplicação por produto
+- Cliente único por CPF/CNPJ (ou e-mail para cadastro sem documento) — sem duplicação por produto
 - Trial concedido apenas uma vez por customer + product
 - Idempotente: chamadas repetidas com mesmo documento retornam o mesmo estado
 
@@ -113,11 +113,13 @@ Content-Type: application/json
 
 | Campo | Tipo | Obrigatório | Descrição |
 |---|---|---|---|
-| `document` | string | ✓ | CPF ou CNPJ (formatado ou apenas dígitos) |
-| `personType` | `PF` \| `PJ` | ✓ | Tipo de pessoa |
+| `document` | string | Não | CPF ou CNPJ (formatado ou apenas dígitos). Se ausente, o Hub usa e-mail como referência e gera identificador interno. |
+| `personType` | `PF` \| `PJ` | Não* | Tipo de pessoa (recomendado quando `document` é enviado). |
 | `productId` | UUID | ✓ | ID do produto no Hub |
 | `name` | string | ✓ | Nome completo ou Razão Social |
 | `email` | string | ✓ | E-mail do cliente |
+
+\* Quando `document` não for enviado, o Hub aceita onboarding por e-mail.
 
 **Resposta — trial iniciado:**
 
@@ -347,6 +349,16 @@ Content-Type: application/json
   "addressDistrict": "Centro",
   "addressCity": "Fortaleza",
   "addressState": "CE"
+}
+```
+
+Sem CPF/CNPJ (somente e-mail):
+
+```json
+{
+  "personType": "PF",
+  "legalName": "Cliente Internacional",
+  "email": "cliente.sem.documento@exemplo.com"
 }
 ```
 
