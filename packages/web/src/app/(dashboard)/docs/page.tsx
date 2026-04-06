@@ -319,7 +319,8 @@ HTTP/1.1 200
             <code className="font-mono text-xs"> email</code>. O Hub cria um identificador interno automaticamente.
           </Alert>
           <Alert type="warning">
-            Contrato atual de produção: cadastro por e-mail sem documento funciona para acesso/trial, mas checkout de cobrança exige CPF/CNPJ no cliente.
+            Contrato atual de produção: cadastro por e-mail sem documento funciona para acesso/trial.
+            Para PIX, envie dados do titular no checkout (<code className="font-mono text-xs">payerName</code> e <code className="font-mono text-xs">payerDocument</code>) quando o cliente não tiver documento válido salvo.
           </Alert>
 
           <Endpoint
@@ -902,7 +903,11 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
             Conversão de trial para pago: se já existir assinatura em trial/ativa, use <code className="font-mono text-xs">PATCH /subscriptions/{'{subscriptionId}'}/change-plan</code> e depois <code className="font-mono text-xs">POST /subscriptions/{'{subscriptionId}'}/checkout</code>. Se o trial veio apenas do <code className="font-mono text-xs">/access/resolve</code>, use <code className="font-mono text-xs">POST /orders</code> + <code className="font-mono text-xs">POST /orders/{'{orderId}'}/checkout</code>.
           </Alert>
           <Alert type="warning">
-            Regra vigente: <code className="font-mono text-xs">/orders/{'{orderId}'}/checkout</code> e <code className="font-mono text-xs">/subscriptions/{'{subscriptionId}'}/checkout</code> exigem cliente com CPF/CNPJ (<code className="font-mono text-xs">document/documentClean</code>). Se o cliente foi criado só com e-mail, atualize o cadastro antes da cobrança.
+            Regra vigente para PIX: o titular precisa ter nome e CPF/CNPJ válido.
+            Se o cliente não tiver documento válido salvo, envie <code className="font-mono text-xs">payerName</code> e <code className="font-mono text-xs">payerDocument</code> no checkout.
+          </Alert>
+          <Alert type="info">
+            Quando <code className="font-mono text-xs">payerDocument</code> é enviado e o checkout PIX é criado com sucesso, o Hub tenta persistir o documento no cliente para reutilizar nas próximas cobranças.
           </Alert>
 
           <Endpoint
@@ -954,9 +959,13 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
             <PropTable rows={[
               { name: 'billingType', type: `'PIX' | 'CREDIT_CARD'`, required: true, description: 'Método de pagamento' },
               { name: 'installmentCount', type: 'number', required: false, description: 'Parcelas (cartão)' },
+              { name: 'payerName', type: 'string', required: false, description: 'Nome do titular (obrigatório para PIX quando faltar no cadastro)' },
+              { name: 'payerDocument', type: 'string', required: false, description: 'CPF/CNPJ do titular (obrigatório para PIX quando faltar no cadastro)' },
             ]} />
             <CodeBlock language="json" code={`{
-  "billingType": "PIX"
+  "billingType": "PIX",
+  "payerName": "Maria Oliveira",
+  "payerDocument": "12345678909"
 }`} />
             <CodeBlock language="json" code={`{
   "chargeId": "uuid-local-da-cobranca",
@@ -972,10 +981,10 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
   "dueDate": "2026-03-31"
 }`} />
             <CodeBlock language="json" code={`{
-  "code": "CUSTOMER_DOCUMENT_REQUIRED",
-  "message": "CPF/CNPJ é obrigatório para gerar cobrança no gateway atual.",
+  "code": "PAYER_DOCUMENT_REQUIRED",
+  "message": "CPF/CNPJ válido do titular é obrigatório para gerar cobrança PIX.",
   "details": [
-    "Cadastre CPF/CNPJ no cliente antes de executar checkout PIX/cartão.",
+    "Informe payerDocument no checkout (11 dígitos para CPF ou 14 para CNPJ).",
     "Onboarding por e-mail continua suportado em /access/resolve para acesso/trial."
   ],
   "statusCode": 422

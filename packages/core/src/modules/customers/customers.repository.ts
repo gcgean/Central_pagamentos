@@ -133,6 +133,21 @@ export class CustomersRepository {
     return this.map(row)
   }
 
+  async updateIdentity(
+    id: string,
+    data: { personType: 'PF' | 'PJ'; document: string; documentClean: string },
+  ): Promise<Customer> {
+    const [row] = await this.sql`
+      UPDATE customers SET
+        person_type = ${data.personType},
+        document = ${data.document},
+        document_clean = ${data.documentClean}
+      WHERE id = ${id}
+      RETURNING *
+    `
+    return this.map(row)
+  }
+
   async getCustomerProducts(customerId: string): Promise<any[]> {
     return this.sql`
       SELECT * FROM v_customer_products

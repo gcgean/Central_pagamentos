@@ -8,6 +8,7 @@ import { PlansService } from '../plans/plans.service'
 import { ProductsService } from '../products/products.service'
 import { SettingsService } from '../settings/settings.service'
 import dayjs from 'dayjs'
+import { cleanDocument, validateDocument } from '../../shared/utils/document.util'
 
 export interface CreateCheckoutParams {
   customerId: string
@@ -18,6 +19,8 @@ export interface CreateCheckoutParams {
   billingType: 'PIX' | 'CREDIT_CARD'
   installmentCount?: number
   remoteIp?: string
+  payerName?: string
+  payerDocument?: string
 }
 
 @Injectable()
@@ -84,7 +87,7 @@ export class CheckoutService {
 
     this.logger.log(`Iniciando checkout Mercado Pago [${params.billingType}] para ${params.originType}:${params.originId}`)
 
-    const customerDocument = this.resolveCustomerDocument(customer)
+    const payer = this.resolvePayerData(customer, params.billingType, params.payerName, params.payerDocument)
 
     if (params.billingType === 'CREDIT_CARD') {
       const preference = await this.mp.createHostedCheckout({
@@ -134,8 +137,8 @@ export class CheckoutService {
 
     const charge = await this.mp.createCharge({
       email:             customer.email,
-      cpfCnpj:          customerDocument,
-      name:             customer.legalName ?? customer.name,
+      cpfCnpj:          payer.document,
+      name:             payer.name,
       amount:           plan.amount,          // em centavos
       description,
       billingType:      'PIX',
@@ -163,6 +166,8 @@ export class CheckoutService {
 
     this.logger.log(`Checkout MP criado: charge ${localCharge.id} → MP ${charge.id}`)
 
+    await this.persistCheckoutPayerDocument(params.customerId, payer)
+
     return {
       chargeId:         localCharge.id,
       externalChargeId: String(charge.id),
@@ -186,10 +191,17 @@ export class CheckoutService {
     product: any,
     customer: any,
   ) {
-    const customerDocument = this.resolveCustomerDocument(customer)
+    const payer = this.resolvePayerData(customer, params.billingType, params.payerName, params.payerDocument)
+    if (!payer.document) {
+      throw new UnprocessableEntityException({
+        code: 'PAYER_DOCUMENT_REQUIRED',
+        message: 'CPF/CNPJ do titular é obrigatório para gerar cobrança no gateway atual.',
+        details: ['Informe payerDocument no checkout.'],
+      })
+    }
     const asaasCustomer = await this.asaas.createOrFindCustomer({
-      name:     customer.legalName,
-      cpfCnpj: customerDocument,
+      name:     payer.name,
+      cpfCnpj: payer.document,
       email:   customer.email,
       phone:   customer.phone ?? undefined,
     })
@@ -241,6 +253,8 @@ export class CheckoutService {
 
     this.logger.log(`Checkout Asaas criado: charge ${localCharge.id} → Asaas ${charge.id}`)
 
+    await this.persistCheckoutPayerDocument(params.customerId, payer)
+
     return {
       chargeId:         localCharge.id,
       externalChargeId: charge.id,
@@ -256,19 +270,59 @@ export class CheckoutService {
     }
   }
 
-  private resolveCustomerDocument(customer: any): string {
-    const rawDocument = String(customer?.documentClean ?? customer?.document ?? '').replace(/\D/g, '')
-    if (!rawDocument) {
-      throw new UnprocessableEntityException({
-        code: 'CUSTOMER_DOCUMENT_REQUIRED',
-        message: 'CPF/CNPJ é obrigatório para gerar cobrança no gateway atual.',
-        details: [
-          'Cadastre CPF/CNPJ no cliente antes de executar checkout PIX/cartão.',
-          'Onboarding por e-mail continua suportado em /access/resolve para acesso/trial.',
-        ],
-      })
+  private resolvePayerData(
+    customer: any,
+    billingType: 'PIX' | 'CREDIT_CARD',
+    payerName?: string,
+    payerDocument?: string,
+  ): { name: string; document: string; shouldPersistDocument: boolean } {
+    const nameFallback = String(customer?.legalName ?? customer?.name ?? '').trim()
+    const name = String(payerName ?? nameFallback).trim()
+    const providedDocument = cleanDocument(String(payerDocument ?? ''))
+    const fallbackDocument = cleanDocument(String(customer?.documentClean ?? customer?.document ?? ''))
+    const document = providedDocument || fallbackDocument
+
+    if (billingType === 'PIX') {
+      if (!name) {
+        throw new UnprocessableEntityException({
+          code: 'PAYER_NAME_REQUIRED',
+          message: 'Nome do titular é obrigatório para gerar cobrança PIX.',
+          details: ['Informe payerName no checkout.'],
+        })
+      }
+
+      const personType = document.length === 11 ? 'PF' : document.length === 14 ? 'PJ' : null
+      const isValid = !!personType && validateDocument(document, personType)
+      if (!isValid) {
+        throw new UnprocessableEntityException({
+          code: 'PAYER_DOCUMENT_REQUIRED',
+          message: 'CPF/CNPJ válido do titular é obrigatório para gerar cobrança PIX.',
+          details: [
+            'Informe payerDocument no checkout (11 dígitos para CPF ou 14 para CNPJ).',
+            'Onboarding por e-mail continua suportado em /access/resolve para acesso/trial.',
+          ],
+        })
+      }
     }
-    return rawDocument
+
+    return {
+      name: name || 'Titular',
+      document,
+      shouldPersistDocument: !!providedDocument,
+    }
+  }
+
+  private async persistCheckoutPayerDocument(
+    customerId: string,
+    payer: { document: string; shouldPersistDocument: boolean },
+  ): Promise<void> {
+    if (!payer.shouldPersistDocument || !payer.document) return
+    try {
+      await this.customers.persistDocumentFromCheckout(customerId, payer.document)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'erro desconhecido'
+      this.logger.warn(`Falha ao persistir documento do titular no cliente ${customerId}: ${message}`)
+    }
   }
 
   // ── Assinatura recorrente ─────────────────────────────────────────────────────

@@ -38,6 +38,14 @@ class CreateCheckoutDto {
   billingType: 'PIX' | 'CREDIT_CARD'
 
   @ApiPropertyOptional() @IsOptional() @IsNumber() installmentCount?: number
+
+  @ApiPropertyOptional({ description: 'Nome do titular (obrigatório para PIX quando cliente não possui nome/documento válido)' })
+  @IsOptional() @IsString()
+  payerName?: string
+
+  @ApiPropertyOptional({ description: 'CPF/CNPJ do titular (11 ou 14 dígitos). Obrigatório para PIX quando cliente não possui documento válido.' })
+  @IsOptional() @IsString()
+  payerDocument?: string
 }
 
 class CreateOrderDto {

@@ -90,6 +90,31 @@ export class CustomersService {
     return this.repo.getCustomerLicenses(customerId)
   }
 
+  async persistDocumentFromCheckout(customerId: string, payerDocument: string): Promise<Customer> {
+    const customer = await this.findById(customerId)
+    const documentClean = cleanDocument(payerDocument)
+    const personType: 'PF' | 'PJ' = documentClean.length === 11 ? 'PF' : 'PJ'
+
+    if (!validateDocument(documentClean, personType)) {
+      throw new ConflictException('Documento do titular inválido para persistência')
+    }
+
+    const existing = await this.repo.findByDocument(documentClean)
+    if (existing && existing.id !== customerId) {
+      throw new ConflictException('Documento do titular já pertence a outro cliente')
+    }
+
+    if (customer.documentClean === documentClean) {
+      return customer
+    }
+
+    return this.repo.updateIdentity(customerId, {
+      personType,
+      document: documentClean,
+      documentClean,
+    })
+  }
+
   private async generateSyntheticDocument(email: string, personType: 'PF' | 'PJ'): Promise<string> {
     const length = personType === 'PJ' ? 14 : 11
 

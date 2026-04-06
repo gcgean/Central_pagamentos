@@ -92,7 +92,8 @@ GET /access/status?customerId=xxx&productId=yyy
 
 Endpoint principal para onboarding. Localiza ou cria o cliente pelo CPF/CNPJ (ou por e-mail quando não houver documento), verifica licença e trial, e retorna a decisão de acesso.
 
-> Atenção de contrato (produção): onboarding por e-mail sem CPF/CNPJ é aceito para acesso/trial, mas **checkout de cobrança exige CPF/CNPJ** do cliente no gateway atual.
+> Atenção de contrato (produção): onboarding por e-mail sem CPF/CNPJ é aceito para acesso/trial.  
+> Para PIX, informe os dados do titular no checkout (`payerName` e `payerDocument`) quando o cliente não tiver documento válido salvo.
 
 **Garantias:**
 - Cliente único por CPF/CNPJ (ou e-mail para cadastro sem documento) — sem duplicação por produto
@@ -476,8 +477,9 @@ O trial é gerenciado **exclusivamente pelo Hub**. O sistema satélite não cont
 
 ## Endpoints financeiros (JWT Admin)
 
-> Regra vigente em produção: para gerar checkout (`/orders/{id}/checkout` e `/subscriptions/{id}/checkout`), o cliente precisa ter `document/documentClean` (CPF/CNPJ).  
-> Cliente criado apenas com e-mail em `/access/resolve` deve ser enriquecido com CPF/CNPJ antes da cobrança.
+> Regra vigente em produção (PIX): para gerar checkout, é necessário CPF/CNPJ válido do titular.  
+> Se o cliente não tiver documento válido salvo, envie no próprio checkout: `payerName` e `payerDocument`.
+> Quando `payerDocument` é enviado e o checkout é gerado com sucesso, o Hub tenta persistir esse documento no cadastro do cliente para próximas cobranças.
 
 ### Conversão de trial para plano pago (fluxo oficial)
 
@@ -528,7 +530,9 @@ Authorization: Bearer <accessToken>
 Content-Type: application/json
 
 {
-  "billingType": "PIX"
+  "billingType": "PIX",
+  "payerName": "Maria Oliveira",
+  "payerDocument": "12345678909"
 }
 ```
 
@@ -585,7 +589,9 @@ Authorization: Bearer <accessToken>
 Content-Type: application/json
 
 {
-  "billingType": "PIX"
+  "billingType": "PIX",
+  "payerName": "Maria Oliveira",
+  "payerDocument": "12345678909"
 }
 ```
 
@@ -596,15 +602,28 @@ Resposta de checkout (campos principais para integração):
 - `pixCode` (quando PIX)
 - `amount`
 
-Erro esperado quando faltar CPF/CNPJ no checkout:
+Erro esperado quando faltar dados obrigatórios do titular no checkout PIX:
 
 ```json
 {
-  "code": "CUSTOMER_DOCUMENT_REQUIRED",
-  "message": "CPF/CNPJ é obrigatório para gerar cobrança no gateway atual.",
+  "code": "PAYER_DOCUMENT_REQUIRED",
+  "message": "CPF/CNPJ válido do titular é obrigatório para gerar cobrança PIX.",
   "details": [
-    "Cadastre CPF/CNPJ no cliente antes de executar checkout PIX/cartão.",
+    "Informe payerDocument no checkout (11 dígitos para CPF ou 14 para CNPJ).",
     "Onboarding por e-mail continua suportado em /access/resolve para acesso/trial."
+  ],
+  "statusCode": 422
+}
+```
+
+Quando faltar nome do titular no checkout PIX:
+
+```json
+{
+  "code": "PAYER_NAME_REQUIRED",
+  "message": "Nome do titular é obrigatório para gerar cobrança PIX.",
+  "details": [
+    "Informe payerName no checkout."
   ],
   "statusCode": 422
 }
