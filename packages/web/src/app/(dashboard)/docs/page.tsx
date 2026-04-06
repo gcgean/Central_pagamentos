@@ -318,6 +318,9 @@ HTTP/1.1 200
             Quando o cliente não possui CPF/CNPJ, envie apenas <code className="font-mono text-xs">name</code> e
             <code className="font-mono text-xs"> email</code>. O Hub cria um identificador interno automaticamente.
           </Alert>
+          <Alert type="warning">
+            Contrato atual de produção: cadastro por e-mail sem documento funciona para acesso/trial, mas checkout de cobrança exige CPF/CNPJ no cliente.
+          </Alert>
 
           <Endpoint
             method="POST"
@@ -898,6 +901,9 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
           <Alert type="info">
             Conversão de trial para pago: se já existir assinatura em trial/ativa, use <code className="font-mono text-xs">PATCH /subscriptions/{'{subscriptionId}'}/change-plan</code> e depois <code className="font-mono text-xs">POST /subscriptions/{'{subscriptionId}'}/checkout</code>. Se o trial veio apenas do <code className="font-mono text-xs">/access/resolve</code>, use <code className="font-mono text-xs">POST /orders</code> + <code className="font-mono text-xs">POST /orders/{'{orderId}'}/checkout</code>.
           </Alert>
+          <Alert type="warning">
+            Regra vigente: <code className="font-mono text-xs">/orders/{'{orderId}'}/checkout</code> e <code className="font-mono text-xs">/subscriptions/{'{subscriptionId}'}/checkout</code> exigem cliente com CPF/CNPJ (<code className="font-mono text-xs">document/documentClean</code>). Se o cliente foi criado só com e-mail, atualize o cadastro antes da cobrança.
+          </Alert>
 
           <Endpoint
             method="POST"
@@ -964,6 +970,15 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
   "amount": 9900,
   "currency": "BRL",
   "dueDate": "2026-03-31"
+}`} />
+            <CodeBlock language="json" code={`{
+  "code": "CUSTOMER_DOCUMENT_REQUIRED",
+  "message": "CPF/CNPJ é obrigatório para gerar cobrança no gateway atual.",
+  "details": [
+    "Cadastre CPF/CNPJ no cliente antes de executar checkout PIX/cartão.",
+    "Onboarding por e-mail continua suportado em /access/resolve para acesso/trial."
+  ],
+  "statusCode": 422
 }`} />
           </Endpoint>
 

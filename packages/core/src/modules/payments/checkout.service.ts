@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common'
+import { Injectable, Logger, BadRequestException, UnprocessableEntityException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { AsaasGateway } from './gateways/asaas.gateway'
 import { MercadoPagoGateway } from './gateways/mercadopago.gateway'
@@ -84,6 +84,8 @@ export class CheckoutService {
 
     this.logger.log(`Iniciando checkout Mercado Pago [${params.billingType}] para ${params.originType}:${params.originId}`)
 
+    const customerDocument = this.resolveCustomerDocument(customer)
+
     if (params.billingType === 'CREDIT_CARD') {
       const preference = await this.mp.createHostedCheckout({
         title: description,
@@ -132,7 +134,7 @@ export class CheckoutService {
 
     const charge = await this.mp.createCharge({
       email:             customer.email,
-      cpfCnpj:          customer.documentClean ?? customer.document,
+      cpfCnpj:          customerDocument,
       name:             customer.legalName ?? customer.name,
       amount:           plan.amount,          // em centavos
       description,
@@ -184,9 +186,10 @@ export class CheckoutService {
     product: any,
     customer: any,
   ) {
+    const customerDocument = this.resolveCustomerDocument(customer)
     const asaasCustomer = await this.asaas.createOrFindCustomer({
       name:     customer.legalName,
-      cpfCnpj: customer.documentClean,
+      cpfCnpj: customerDocument,
       email:   customer.email,
       phone:   customer.phone ?? undefined,
     })
@@ -251,6 +254,21 @@ export class CheckoutService {
       currency:         plan.currency,
       dueDate,
     }
+  }
+
+  private resolveCustomerDocument(customer: any): string {
+    const rawDocument = String(customer?.documentClean ?? customer?.document ?? '').replace(/\D/g, '')
+    if (!rawDocument) {
+      throw new UnprocessableEntityException({
+        code: 'CUSTOMER_DOCUMENT_REQUIRED',
+        message: 'CPF/CNPJ é obrigatório para gerar cobrança no gateway atual.',
+        details: [
+          'Cadastre CPF/CNPJ no cliente antes de executar checkout PIX/cartão.',
+          'Onboarding por e-mail continua suportado em /access/resolve para acesso/trial.',
+        ],
+      })
+    }
+    return rawDocument
   }
 
   // ── Assinatura recorrente ─────────────────────────────────────────────────────

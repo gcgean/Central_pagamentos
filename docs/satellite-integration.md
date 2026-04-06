@@ -92,6 +92,8 @@ GET /access/status?customerId=xxx&productId=yyy
 
 Endpoint principal para onboarding. Localiza ou cria o cliente pelo CPF/CNPJ (ou por e-mail quando não houver documento), verifica licença e trial, e retorna a decisão de acesso.
 
+> Atenção de contrato (produção): onboarding por e-mail sem CPF/CNPJ é aceito para acesso/trial, mas **checkout de cobrança exige CPF/CNPJ** do cliente no gateway atual.
+
 **Garantias:**
 - Cliente único por CPF/CNPJ (ou e-mail para cadastro sem documento) — sem duplicação por produto
 - Trial concedido apenas uma vez por customer + product
@@ -119,7 +121,7 @@ Content-Type: application/json
 | `name` | string | ✓ | Nome completo ou Razão Social |
 | `email` | string | ✓ | E-mail do cliente |
 
-\* Quando `document` não for enviado, o Hub aceita onboarding por e-mail.
+\* Quando `document` não for enviado, o Hub aceita onboarding por e-mail (somente para acesso/trial).
 
 **Resposta — trial iniciado:**
 
@@ -474,6 +476,9 @@ O trial é gerenciado **exclusivamente pelo Hub**. O sistema satélite não cont
 
 ## Endpoints financeiros (JWT Admin)
 
+> Regra vigente em produção: para gerar checkout (`/orders/{id}/checkout` e `/subscriptions/{id}/checkout`), o cliente precisa ter `document/documentClean` (CPF/CNPJ).  
+> Cliente criado apenas com e-mail em `/access/resolve` deve ser enriquecido com CPF/CNPJ antes da cobrança.
+
 ### Conversão de trial para plano pago (fluxo oficial)
 
 Existem dois cenários oficiais:
@@ -590,6 +595,20 @@ Resposta de checkout (campos principais para integração):
 - `checkoutUrl` (quando aplicável)
 - `pixCode` (quando PIX)
 - `amount`
+
+Erro esperado quando faltar CPF/CNPJ no checkout:
+
+```json
+{
+  "code": "CUSTOMER_DOCUMENT_REQUIRED",
+  "message": "CPF/CNPJ é obrigatório para gerar cobrança no gateway atual.",
+  "details": [
+    "Cadastre CPF/CNPJ no cliente antes de executar checkout PIX/cartão.",
+    "Onboarding por e-mail continua suportado em /access/resolve para acesso/trial."
+  ],
+  "statusCode": 422
+}
+```
 
 ### Consultar cobranças por origem
 
