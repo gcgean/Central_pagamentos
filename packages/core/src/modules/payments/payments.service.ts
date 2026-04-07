@@ -87,17 +87,81 @@ export class PaymentsService {
     }))
   }
 
-  private async syncPendingMercadoPagoCharge(externalChargeId: string) {
-    if (!externalChargeId) return
+  async syncPendingMercadoPagoChargesBatch(limit = 100): Promise<{
+    scanned: number
+    paid: number
+    failed: number
+  }> {
+    return this.syncPendingMercadoPagoChargesBatchThrottled(limit, 0)
+  }
+
+  async syncPendingMercadoPagoChargesBatchThrottled(
+    limit = 20,
+    delayMs = 350,
+  ): Promise<{
+    scanned: number
+    paid: number
+    failed: number
+  }> {
+    const pending = await this.repo.listPendingMercadoPagoCharges(limit)
+    if (pending.length === 0) {
+      return { scanned: 0, paid: 0, failed: 0 }
+    }
+
     const cfg = await this.settings.getGatewayConfig()
     this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
+
+    let paid = 0
+    let failed = 0
+
+    for (let index = 0; index < pending.length; index++) {
+      const charge = pending[index]
+      try {
+        const result = await this.syncPendingMercadoPagoChargeWithConfiguredClient(charge.externalChargeId)
+        if (result === 'paid') paid++
+        if (result === 'failed') failed++
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'erro desconhecido'
+        this.logger.warn(`Falha ao sincronizar cobrança pendente ${charge.id}: ${message}`)
+      }
+
+      // Evita rajadas contra o gateway; mantém throughput constante e previsível.
+      if (delayMs > 0 && index < pending.length - 1) {
+        await this.sleep(delayMs)
+      }
+    }
+
+    return {
+      scanned: pending.length,
+      paid,
+      failed,
+    }
+  }
+
+  private async syncPendingMercadoPagoCharge(externalChargeId: string): Promise<'paid' | 'failed' | 'pending'> {
+    if (!externalChargeId) return 'pending'
+    const cfg = await this.settings.getGatewayConfig()
+    this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
+    return this.syncPendingMercadoPagoChargeWithConfiguredClient(externalChargeId)
+  }
+
+  private async syncPendingMercadoPagoChargeWithConfiguredClient(
+    externalChargeId: string,
+  ): Promise<'paid' | 'failed' | 'pending'> {
+    if (!externalChargeId) return 'pending'
     const remote = await this.mp.getCharge(externalChargeId)
     if (remote.status === 'approved') {
       await this.invoices.markPaid(String(remote.id), remote)
-      return
+      return 'paid'
     }
     if (['rejected', 'cancelled', 'refunded', 'charged_back'].includes(remote.status)) {
       await this.invoices.markFailed(String(remote.id), remote.status_detail ?? remote.status)
+      return 'failed'
     }
+    return 'pending'
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms))
   }
 }

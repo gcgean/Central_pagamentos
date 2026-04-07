@@ -11,6 +11,7 @@ import { ProductsModule } from '../products/products.module'
 import { CustomersModule } from '../customers/customers.module'
 import { SettingsModule } from '../settings/settings.module'
 import { InvoicesModule } from '../invoices/invoices.module'
+import { PaymentsSyncScheduler } from './payments-sync.scheduler'
 
 @Module({
   imports: [LicensesModule, PlansModule, ProductsModule, CustomersModule, SettingsModule, InvoicesModule],
@@ -21,6 +22,7 @@ import { InvoicesModule } from '../invoices/invoices.module'
     PaymentsRepository,
     AsaasGateway,
     MercadoPagoGateway,
+    PaymentsSyncScheduler,
   ],
   exports: [PaymentsService, CheckoutService, MercadoPagoGateway],
 })

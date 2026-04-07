@@ -72,6 +72,11 @@ export default function LicensesPage() {
     enabled: searched,
   })
 
+  const syncPendingMutation = useMutation({
+    mutationFn: () => api.post('/payments/sync-pending'),
+    retry: false,
+  })
+
   const { register, handleSubmit, reset, formState: { errors } } = useForm<ManualFormData>({
     resolver: zodResolver(manualSchema),
   })
@@ -89,7 +94,8 @@ export default function LicensesPage() {
     },
   })
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
+    await syncPendingMutation.mutateAsync().catch(() => undefined)
     setCustomerId(searchInput.trim())
     setSearched(true)
   }
@@ -115,10 +121,15 @@ export default function LicensesPage() {
               placeholder="ID do cliente (UUID) — opcional"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void handleSearch()
+                }
+              }}
               className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
-            <Button onClick={handleSearch} variant="outline">
+            <Button onClick={() => void handleSearch()} variant="outline" loading={syncPendingMutation.isPending}>
               <Search size={16} /> Buscar
             </Button>
           </div>

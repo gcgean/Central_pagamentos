@@ -37,4 +37,17 @@ export class PaymentsController {
   cancel(@Param('externalId') externalId: string) {
     return this.service.cancelCharge(externalId)
   }
+
+  @Post('sync-pending')
+  @ApiOperation({ summary: 'Forçar sincronização em lote de cobranças pendentes (Mercado Pago)' })
+  syncPending(
+    @Query('limit') limit?: string,
+    @Query('delayMs') delayMs?: string,
+  ) {
+    const parsedLimit = Number(limit)
+    const parsedDelay = Number(delayMs)
+    const safeLimit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 20
+    const safeDelay = Number.isFinite(parsedDelay) ? Math.min(Math.max(parsedDelay, 0), 2000) : 350
+    return this.service.syncPendingMercadoPagoChargesBatchThrottled(safeLimit, safeDelay)
+  }
 }

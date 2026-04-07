@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -60,7 +60,13 @@ export default function SubscriptionsPage() {
     enabled: searched,
   })
 
-  const handleSearch = () => {
+  const syncPendingMutation = useMutation({
+    mutationFn: () => api.post('/payments/sync-pending'),
+    retry: false,
+  })
+
+  const handleSearch = async () => {
+    await syncPendingMutation.mutateAsync().catch(() => undefined)
     setCustomerId(searchInput.trim())
     setSearched(true)
   }
@@ -88,10 +94,15 @@ export default function SubscriptionsPage() {
               placeholder="ID do cliente (UUID) — opcional"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void handleSearch()
+                }
+              }}
               className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
-            <Button onClick={handleSearch} variant="outline">
+            <Button onClick={() => void handleSearch()} variant="outline" loading={syncPendingMutation.isPending}>
               <Search size={16} /> Buscar
             </Button>
           </div>
