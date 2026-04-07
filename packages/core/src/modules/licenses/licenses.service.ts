@@ -242,6 +242,10 @@ export class LicensesService {
     return this.repo.findActiveByCustomerAndProduct(customerId, productId)
   }
 
+  async findAll(): Promise<License[]> {
+    return this.repo.findAll()
+  }
+
   async findAllByCustomer(customerId: string): Promise<License[]> {
     return this.repo.findAllByCustomer(customerId)
   }

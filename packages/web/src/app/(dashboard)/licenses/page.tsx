@@ -23,6 +23,8 @@ interface License {
   customerName?: string
   productName?: string
   planName?: string
+  product?: { name?: string; code?: string }
+  plan?: { name?: string; code?: string }
   expiresAt?: string
   maxUsers?: number
   createdAt: string
@@ -62,10 +64,12 @@ export default function LicensesPage() {
   const { data: licenses, isLoading } = useQuery<License[]>({
     queryKey: ['licenses', 'customer', customerId],
     queryFn: async () => {
-      const { data } = await api.get(`/licenses/customer/${customerId}`)
+      const { data } = customerId
+        ? await api.get(`/licenses/customer/${customerId}`)
+        : await api.get('/licenses')
       return data
     },
-    enabled: !!customerId && searched,
+    enabled: searched,
   })
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<ManualFormData>({
@@ -86,10 +90,8 @@ export default function LicensesPage() {
   })
 
   const handleSearch = () => {
-    if (searchInput.trim()) {
-      setCustomerId(searchInput.trim())
-      setSearched(true)
-    }
+    setCustomerId(searchInput.trim())
+    setSearched(true)
   }
 
   return (
@@ -110,7 +112,7 @@ export default function LicensesPage() {
           <div className="flex gap-2 max-w-md">
             <input
               type="text"
-              placeholder="ID do cliente (UUID)..."
+              placeholder="ID do cliente (UUID) — opcional"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -128,7 +130,11 @@ export default function LicensesPage() {
           {isLoading ? (
             <Spinner />
           ) : !licenses?.length ? (
-            <EmptyState icon={ShieldCheck} title="Nenhuma licença encontrada" description="Este cliente não possui licenças." />
+            <EmptyState
+              icon={ShieldCheck}
+              title="Nenhuma licença encontrada"
+              description={customerId ? 'Este cliente não possui licenças.' : 'Não há licenças cadastradas.'}
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -145,8 +151,8 @@ export default function LicensesPage() {
                 <tbody className="divide-y divide-gray-50">
                   {licenses.map((lic) => (
                     <tr key={lic.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-3 text-sm font-medium text-gray-900">{lic.productName ?? '—'}</td>
-                      <td className="px-6 py-3 text-sm text-gray-600">{lic.planName ?? '—'}</td>
+                      <td className="px-6 py-3 text-sm font-medium text-gray-900">{lic.productName ?? lic.product?.name ?? '—'}</td>
+                      <td className="px-6 py-3 text-sm text-gray-600">{lic.planName ?? lic.plan?.name ?? '—'}</td>
                       <td className="px-6 py-3">
                         <Badge variant={statusColors[lic.status] ?? 'gray'}>
                           {statusLabels[lic.status] ?? lic.status}

@@ -23,6 +23,8 @@ interface Order {
   customer?: { name: string; email: string }
   contractedAmount: number
   createdAt: string
+  customerName?: string
+  customerEmail?: string
 }
 
 const orderSchema = z.object({
@@ -62,13 +64,17 @@ export default function OrdersPage() {
   const [searched, setSearched] = useState(false)
   const [modalError, setModalError] = useState('')
 
-  const { data: order, isLoading: loadingSearch, error: searchError } = useQuery<Order>({
+  const { data: orders, isLoading: loadingSearch, error: searchError } = useQuery<Order[]>({
     queryKey: ['order-search', searchId],
     queryFn: async () => {
-      const { data } = await api.get(`/orders/${searchId}`)
+      if (searchId) {
+        const { data } = await api.get(`/orders/${searchId}`)
+        return [data]
+      }
+      const { data } = await api.get('/orders')
       return data
     },
-    enabled: !!searchId && searched,
+    enabled: searched,
     retry: false,
   })
 
@@ -98,10 +104,8 @@ export default function OrdersPage() {
   })
 
   const handleSearch = () => {
-    if (searchInput.trim()) {
-      setSearchId(searchInput.trim())
-      setSearched(true)
-    }
+    setSearchId(searchInput.trim())
+    setSearched(true)
   }
 
   return (
@@ -122,7 +126,7 @@ export default function OrdersPage() {
           <div className="flex gap-2 max-w-md">
             <input
               type="text"
-              placeholder="ID do pedido (UUID)..."
+              placeholder="ID do pedido (UUID) — opcional"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -139,9 +143,11 @@ export default function OrdersPage() {
         <Card>
           {loadingSearch ? (
             <Spinner />
-          ) : searchError ? (
+          ) : searchError && searchId ? (
             <EmptyState icon={FileText} title="Pedido não encontrado" description="Verifique o ID informado." />
-          ) : order ? (
+          ) : !orders?.length ? (
+            <EmptyState icon={FileText} title="Nenhum pedido encontrado" description={searchId ? 'Verifique o ID informado.' : 'Não há pedidos cadastrados.'} />
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -154,27 +160,31 @@ export default function OrdersPage() {
                     <th className="px-6 py-3" />
                   </tr>
                 </thead>
-                <tbody>
-                  <tr className="hover:bg-gray-50">
-                    <td className="px-6 py-3 text-xs text-gray-500 font-mono">{order.id.slice(0, 8)}...</td>
-                    <td className="px-6 py-3 text-sm text-gray-700">{order.customer?.name ?? order.customerId.slice(0, 8)}</td>
-                    <td className="px-6 py-3 text-sm font-medium text-gray-900">{formatCurrency(order.contractedAmount)}</td>
-                    <td className="px-6 py-3">
-                      <Badge variant={statusColors[order.status] ?? 'gray'}>
-                        {statusLabels[order.status] ?? order.status}
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-3 text-sm text-gray-500">{formatDateTime(order.createdAt)}</td>
-                    <td className="px-6 py-3 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => router.push(`/orders/${order.id}`)}>
-                        <Eye size={14} /> Ver
-                      </Button>
-                    </td>
-                  </tr>
+                <tbody className="divide-y divide-gray-50">
+                  {orders.map((order) => (
+                    <tr key={order.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-3 text-xs text-gray-500 font-mono">{order.id.slice(0, 8)}...</td>
+                      <td className="px-6 py-3 text-sm text-gray-700">
+                        {order.customer?.name ?? order.customerName ?? order.customerId.slice(0, 8)}
+                      </td>
+                      <td className="px-6 py-3 text-sm font-medium text-gray-900">{formatCurrency(order.contractedAmount)}</td>
+                      <td className="px-6 py-3">
+                        <Badge variant={statusColors[order.status] ?? 'gray'}>
+                          {statusLabels[order.status] ?? order.status}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-3 text-sm text-gray-500">{formatDateTime(order.createdAt)}</td>
+                      <td className="px-6 py-3 text-right">
+                        <Button variant="ghost" size="sm" onClick={() => router.push(`/orders/${order.id}`)}>
+                          <Eye size={14} /> Ver
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
-          ) : null}
+          )}
         </Card>
       )}
 

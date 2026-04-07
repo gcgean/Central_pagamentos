@@ -52,17 +52,17 @@ export default function SubscriptionsPage() {
   const { data: subscriptions, isLoading } = useQuery<Subscription[]>({
     queryKey: ['subscriptions', 'customer', customerId],
     queryFn: async () => {
-      const { data } = await api.get(`/subscriptions/customer/${customerId}`)
+      const { data } = customerId
+        ? await api.get(`/subscriptions/customer/${customerId}`)
+        : await api.get('/subscriptions')
       return data
     },
-    enabled: !!customerId && searched,
+    enabled: searched,
   })
 
   const handleSearch = () => {
-    if (searchInput.trim()) {
-      setCustomerId(searchInput.trim())
-      setSearched(true)
-    }
+    setCustomerId(searchInput.trim())
+    setSearched(true)
   }
 
   return (
@@ -85,7 +85,7 @@ export default function SubscriptionsPage() {
           <div className="flex gap-2 max-w-md">
             <input
               type="text"
-              placeholder="ID do cliente (UUID)..."
+              placeholder="ID do cliente (UUID) — opcional"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -103,7 +103,11 @@ export default function SubscriptionsPage() {
           {isLoading ? (
             <Spinner />
           ) : !subscriptions?.length ? (
-            <EmptyState icon={Zap} title="Nenhuma assinatura encontrada" description="Este cliente não possui assinaturas." />
+            <EmptyState
+              icon={Zap}
+              title="Nenhuma assinatura encontrada"
+              description={customerId ? 'Este cliente não possui assinaturas.' : 'Não há assinaturas cadastradas.'}
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">

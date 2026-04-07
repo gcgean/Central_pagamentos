@@ -184,4 +184,28 @@ export class OrdersService {
       ORDER BY o.created_at DESC
     `
   }
+
+  async findAll() {
+    return this.sql`
+      SELECT
+        o.id,
+        o.customer_id AS "customerId",
+        o.product_id AS "productId",
+        o.plan_id AS "planId",
+        o.status,
+        o.contracted_amount AS "contractedAmount",
+        o.contracted_currency AS "contractedCurrency",
+        o.created_at AS "createdAt",
+        c.legal_name AS "customerName",
+        c.email AS "customerEmail",
+        p.name AS "productName",
+        p.code AS "productCode",
+        pl.name AS "planName"
+      FROM orders o
+      JOIN customers c ON c.id = o.customer_id
+      JOIN products p ON p.id = o.product_id
+      LEFT JOIN plans pl ON pl.id = o.plan_id
+      ORDER BY o.created_at DESC
+    `
+  }
 }

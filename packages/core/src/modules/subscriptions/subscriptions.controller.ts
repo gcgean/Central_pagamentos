@@ -85,6 +85,12 @@ export class SubscriptionsController {
     return this.service.create(dto, req.admin?.sub)
   }
 
+  @Get()
+  @ApiOperation({ summary: 'Listar assinaturas' })
+  findAll() {
+    return this.service.findAll()
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Detalhe da assinatura' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
@@ -166,6 +172,12 @@ export class OrdersController {
   @ApiOperation({ summary: 'Criar pedido avulso para checkout (incluindo conversão de trial)' })
   create(@Body() dto: CreateOrderDto) {
     return this.orders.create(dto)
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Listar pedidos' })
+  findAll() {
+    return this.orders.findAll()
   }
 
   @Get(':id')

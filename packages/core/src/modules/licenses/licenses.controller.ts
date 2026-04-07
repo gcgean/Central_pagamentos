@@ -63,6 +63,12 @@ export class LicensesController {
     })
   }
 
+  @Get()
+  @ApiOperation({ summary: 'Listar todas as licenças' })
+  findAll() {
+    return this.service.findAll()
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Detalhe da licença' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {

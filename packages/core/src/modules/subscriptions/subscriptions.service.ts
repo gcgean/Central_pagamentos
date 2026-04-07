@@ -224,4 +224,8 @@ export class SubscriptionsService {
   async findByCustomer(customerId: string): Promise<Subscription[]> {
     return this.repo.findByCustomer(customerId)
   }
+
+  async findAll(): Promise<Subscription[]> {
+    return this.repo.findAll()
+  }
 }

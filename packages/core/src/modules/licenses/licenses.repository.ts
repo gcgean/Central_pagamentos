@@ -81,6 +81,22 @@ export class LicensesRepository {
     return rows.map(this.map)
   }
 
+  async findAll(): Promise<License[]> {
+    const rows = await this.sql`
+      SELECT
+        l.*,
+        p.code AS product_code,
+        p.name AS product_name,
+        pl.code AS plan_code,
+        pl.name AS plan_name
+      FROM licenses l
+      JOIN products p   ON p.id  = l.product_id
+      LEFT JOIN plans pl ON pl.id = l.plan_id
+      ORDER BY l.created_at DESC
+    `
+    return rows.map(this.map)
+  }
+
   // Busca qualquer licença de trial para o customer+product, independente do status.
   // Usado para determinar se o trial já foi concedido anteriormente.
   async findTrialByCustomerAndProduct(

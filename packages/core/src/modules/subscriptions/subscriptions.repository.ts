@@ -75,6 +75,18 @@ export class SubscriptionsRepository {
     return rows.map(this.map)
   }
 
+  async findAll(): Promise<Subscription[]> {
+    const rows = await this.sql`
+      SELECT s.*, p.name AS product_name, p.code AS product_code,
+             pl.name AS plan_name, pl.code AS plan_code
+      FROM subscriptions s
+      JOIN products  p  ON p.id  = s.product_id
+      JOIN plans     pl ON pl.id = s.plan_id
+      ORDER BY s.created_at DESC
+    `
+    return rows.map(this.map)
+  }
+
   async findActiveByCustomerAndProduct(
     customerId: string,
     productId: string,
