@@ -37,45 +37,52 @@ export class UpsertExternalCustomerDto {
   @IsEmail()
   email: string
 
-  @ApiProperty({ example: '(11) 99999-9999' })
+  @ApiPropertyOptional({ example: '(11) 99999-9999' })
+  @IsOptional()
   @IsString()
   @MinLength(8)
-  phone: string
+  phone?: string
 
-  @ApiProperty({ example: '60000-000' })
+  @ApiPropertyOptional({ example: '60000-000' })
+  @IsOptional()
   @IsString()
   @MinLength(8)
-  addressZip: string
+  addressZip?: string
 
-  @ApiProperty({ example: 'Rua Principal' })
+  @ApiPropertyOptional({ example: 'Rua Principal' })
+  @IsOptional()
   @IsString()
   @MinLength(2)
-  addressStreet: string
+  addressStreet?: string
 
-  @ApiProperty({ example: '123' })
+  @ApiPropertyOptional({ example: '123' })
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  addressNumber: string
+  addressNumber?: string
 
   @ApiPropertyOptional({ example: 'Sala 100' })
   @IsOptional()
   @IsString()
   addressComp?: string
 
-  @ApiProperty({ example: 'Centro' })
+  @ApiPropertyOptional({ example: 'Centro' })
+  @IsOptional()
   @IsString()
   @MinLength(2)
-  addressDistrict: string
+  addressDistrict?: string
 
-  @ApiProperty({ example: 'Fortaleza' })
+  @ApiPropertyOptional({ example: 'Fortaleza' })
+  @IsOptional()
   @IsString()
   @MinLength(2)
-  addressCity: string
+  addressCity?: string
 
-  @ApiProperty({ example: 'CE' })
+  @ApiPropertyOptional({ example: 'CE' })
+  @IsOptional()
   @IsString()
   @Length(2, 2)
-  addressState: string
+  addressState?: string
 
   @ApiPropertyOptional({ example: 'Integração ERP X' })
   @IsOptional()
