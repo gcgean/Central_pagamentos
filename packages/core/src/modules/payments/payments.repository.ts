@@ -107,7 +107,7 @@ export class PaymentsRepository {
       WHERE status = 'pending'
         AND gateway_name = 'mercadopago'
         AND external_charge_id IS NOT NULL
-      ORDER BY created_at ASC
+      ORDER BY COALESCE(updated_at, created_at) DESC, created_at DESC
       LIMIT ${limit}
     `
     return rows.map((row: any) => ({
