@@ -22,6 +22,7 @@ interface Product {
   code: string
   name: string
   description?: string
+  trialDays?: number
   isActive: boolean
   createdAt: string
 }
@@ -51,6 +52,12 @@ const planSchema = z.object({
 
 type PlanFormData = z.infer<typeof planSchema>
 
+const productSchema = z.object({
+  trialDays: z.coerce.number().int().min(0, 'Dias de trial deve ser maior ou igual a 0'),
+})
+
+type ProductFormData = z.infer<typeof productSchema>
+
 const intervalLabels: Record<string, string> = {
   day: 'Diario',
   month: 'Mensal',
@@ -63,9 +70,11 @@ export default function ProductDetailPage() {
   const queryClient = useQueryClient()
   const [showPlanModal, setShowPlanModal] = useState(false)
   const [showEditPlanModal, setShowEditPlanModal] = useState(false)
+  const [showEditProductModal, setShowEditProductModal] = useState(false)
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null)
   const [error, setError] = useState('')
   const [planError, setPlanError] = useState('')
+  const [productError, setProductError] = useState('')
 
   const isArchived = (plan: Plan) => plan.isArchived || plan.status === 'archived'
 
@@ -109,6 +118,16 @@ export default function ProductDetailPage() {
   const { register, handleSubmit, reset, formState: { errors: planErrors } } = useForm<PlanFormData>({
     resolver: zodResolver(planSchema),
     defaultValues: { interval: 'month', intervalCount: 1 },
+  })
+
+  const {
+    register: registerProduct,
+    handleSubmit: handleSubmitProduct,
+    reset: resetProduct,
+    formState: { errors: productFormErrors },
+  } = useForm<ProductFormData>({
+    resolver: zodResolver(productSchema),
+    defaultValues: { trialDays: product?.trialDays ?? 0 },
   })
 
   const createPlanMutation = useMutation({
@@ -161,6 +180,19 @@ export default function ProductDetailPage() {
     },
   })
 
+  const updateProductMutation = useMutation({
+    mutationFn: (data: ProductFormData) => api.put(`/products/${id}`, { trialDays: Number(data.trialDays) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['product', id] })
+      setShowEditProductModal(false)
+      setProductError('')
+    },
+    onError: (err: unknown) => {
+      const axiosErr = err as { response?: { data?: { message?: string } } }
+      setProductError(axiosErr?.response?.data?.message ?? 'Erro ao atualizar produto')
+    },
+  })
+
   const openEditPlanModal = (plan: Plan) => {
     setEditingPlan(plan)
     setPlanError('')
@@ -204,16 +236,30 @@ export default function ProductDetailPage() {
             </div>
             <h2 className="text-lg font-semibold text-gray-900">{product.name}</h2>
             {product.description && <p className="text-sm text-gray-500 mt-1">{product.description}</p>}
+            <p className="text-sm text-gray-500 mt-1">Trial gratuito: {product.trialDays ?? 0} dia(s)</p>
             <p className="text-xs text-gray-400 mt-2">Criado em {formatDate(product.createdAt)}</p>
           </div>
-          <Button
-            variant={product.isActive ? 'danger' : 'secondary'}
-            size="sm"
-            onClick={() => toggleActiveMutation.mutate()}
-            loading={toggleActiveMutation.isPending}
-          >
-            {product.isActive ? 'Desativar' : 'Ativar'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                resetProduct({ trialDays: product.trialDays ?? 0 })
+                setProductError('')
+                setShowEditProductModal(true)
+              }}
+            >
+              <Pencil size={14} /> Editar Produto
+            </Button>
+            <Button
+              variant={product.isActive ? 'danger' : 'secondary'}
+              size="sm"
+              onClick={() => toggleActiveMutation.mutate()}
+              loading={toggleActiveMutation.isPending}
+            >
+              {product.isActive ? 'Desativar' : 'Ativar'}
+            </Button>
+          </div>
         </CardBody>
       </Card>
 
@@ -466,6 +512,53 @@ export default function ProductDetailPage() {
               Cancelar
             </Button>
             <Button type="submit" loading={updatePlanMutation.isPending}>
+              Salvar Alterações
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Product Modal */}
+      <Modal
+        open={showEditProductModal}
+        onClose={() => {
+          setShowEditProductModal(false)
+          setProductError('')
+          resetProduct({ trialDays: product.trialDays ?? 0 })
+        }}
+        title="Editar Produto"
+        size="sm"
+      >
+        {productError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-700">{productError}</p>
+          </div>
+        )}
+        <form onSubmit={handleSubmitProduct((data) => updateProductMutation.mutate(data))} className="space-y-4">
+          <Input id="product-code" label="Código" value={product.code} disabled />
+          <Input id="product-name" label="Nome" value={product.name} disabled />
+          <Input
+            id="product-trialDays"
+            label="Dias de trial"
+            type="number"
+            min="0"
+            placeholder="15"
+            error={productFormErrors.trialDays?.message}
+            {...registerProduct('trialDays')}
+          />
+          <div className="flex gap-3 justify-end pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowEditProductModal(false)
+                setProductError('')
+                resetProduct({ trialDays: product.trialDays ?? 0 })
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" loading={updateProductMutation.isPending}>
               Salvar Alterações
             </Button>
           </div>
