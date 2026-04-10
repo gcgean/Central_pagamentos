@@ -2,6 +2,18 @@
 
 Plataforma central responsável por gerenciar clientes, produtos, assinaturas recorrentes, vendas avulsas, cobranças, pagamentos, licenças e validação de acesso para múltiplos sistemas satélites.
 
+## Diretrizes de colaboração
+
+Este repositório possui regras de trabalho em [AGENTS.md](/C:/Projetos%20Web/Central_pagamentos/AGENTS.md).
+
+Resumo prático:
+
+- Descrever impactos antes de mudanças sensíveis (negócio, integrações, banco, auth).
+- Preservar contratos de API e idempotência.
+- Manter `amount` em centavos nos endpoints de cobrança/planos.
+- Não expor segredos em documentação, logs ou exemplos.
+- Priorizar alterações pequenas, seguras e com rollback simples.
+
 ## Problema que resolve
 
 Cada novo sistema que precisa cobrar clientes teria que reimplementar integração com gateway, lógica de renovação, controle de acesso e gestão de licenças. Este hub centraliza tudo isso em uma única plataforma.
