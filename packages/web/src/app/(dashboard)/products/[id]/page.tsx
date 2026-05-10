@@ -100,7 +100,7 @@ export default function ProductDetailPage() {
   })
 
   const toggleActiveMutation = useMutation({
-    mutationFn: () => api.put(`/products/${id}`, { ...product, isActive: !product?.isActive }),
+    mutationFn: () => api.put(`/products/${id}`, { isActive: !product?.isActive }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['product', id] }),
     onError: () => setError('Erro ao atualizar status'),
   })
