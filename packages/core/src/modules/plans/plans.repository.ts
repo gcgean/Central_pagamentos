@@ -11,12 +11,13 @@ export class PlansRepository {
     const [row] = await this.sql`
       INSERT INTO plans (
         product_id, code, name, interval_unit, interval_count,
-        description, amount, currency, max_users, feature_set, status
+        description, amount, currency, quantity, max_users, feature_set, status
       ) VALUES (
         ${data.productId}, ${data.code}, ${data.name},
         ${data.intervalUnit ?? 'month'}, ${data.intervalCount ?? 1},
         ${data.description ?? null},
         ${data.amount}, ${data.currency ?? 'BRL'},
+        ${data.quantity ?? null},
         ${data.maxUsers ?? null}, ${data.featureSet ?? null},
         'active'
       )
@@ -73,6 +74,9 @@ export class PlansRepository {
         interval_count= COALESCE(${data.intervalCount ?? null}, interval_count),
         amount        = COALESCE(${data.amount ?? null}, amount),
         currency      = COALESCE(${data.currency ?? null}, currency),
+        quantity      = CASE WHEN ${data.quantity !== undefined}
+                        THEN ${data.quantity ?? null}
+                        ELSE quantity END,
         max_users     = COALESCE(${data.maxUsers ?? null}, max_users),
         feature_set   = COALESCE(${data.featureSet ?? null}, feature_set),
         status        = COALESCE(${data.status ?? null}, status),
@@ -111,6 +115,7 @@ export class PlansRepository {
       intervalCount: row.interval_count,
       amount:        row.amount,
       currency:      row.currency,
+      quantity:      row.quantity,
       maxUsers:      row.max_users,
       featureSet:    row.feature_set,
       status,

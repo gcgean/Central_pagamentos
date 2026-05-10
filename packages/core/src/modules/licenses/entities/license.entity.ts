@@ -20,5 +20,5 @@ export interface License {
 
   // joins opcionais
   product?: { code: string; name: string }
-  plan?:    { code: string; name: string }
+  plan?:    { code: string; name: string; quantity?: number | null }
 }

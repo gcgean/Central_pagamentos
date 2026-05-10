@@ -76,6 +76,15 @@ export class ResolveAccessResponseDto {
   @ApiPropertyOptional({ example: 12, nullable: true, description: 'Dias restantes (trial ou licença).' })
   daysLeft: number | null
 
+  @ApiPropertyOptional({ example: 'PRO_MENSAL', nullable: true })
+  planCode?: string | null
+
+  @ApiPropertyOptional({ example: 'Plano Pro', nullable: true })
+  planName?: string | null
+
+  @ApiPropertyOptional({ example: 30, nullable: true, description: 'Quantidade genérica configurada no plano contratado.' })
+  quantity?: number | null
+
   @ApiProperty({
     example: 'trial_active',
     description:
@@ -131,6 +140,15 @@ export class AccessStatusResponseDto {
 
   @ApiPropertyOptional({ example: 45, nullable: true })
   daysLeft: number | null
+
+  @ApiPropertyOptional({ example: 'PRO_MENSAL', nullable: true })
+  planCode?: string | null
+
+  @ApiPropertyOptional({ example: 'Plano Pro', nullable: true })
+  planName?: string | null
+
+  @ApiPropertyOptional({ example: 30, nullable: true, description: 'Quantidade genérica configurada no plano contratado.' })
+  quantity?: number | null
 
   @ApiProperty({
     example: 'licensed',

@@ -37,7 +37,8 @@ export class LicensesRepository {
         p.code  AS product_code,
         p.name  AS product_name,
         pl.code AS plan_code,
-        pl.name AS plan_name
+        pl.name AS plan_name,
+        pl.quantity AS plan_quantity
       FROM licenses l
       JOIN products p   ON p.id  = l.product_id
       LEFT JOIN plans pl ON pl.id = l.plan_id
@@ -51,7 +52,8 @@ export class LicensesRepository {
     productId: string,
   ): Promise<License | null> {
     const [row] = await this.sql`
-      SELECT l.*, p.code AS product_code, pl.code AS plan_code
+      SELECT l.*, p.code AS product_code, p.name AS product_name,
+        pl.code AS plan_code, pl.name AS plan_name, pl.quantity AS plan_quantity
       FROM licenses l
       JOIN products p   ON p.id  = l.product_id
       LEFT JOIN plans pl ON pl.id = l.plan_id
@@ -71,7 +73,8 @@ export class LicensesRepository {
         p.code AS product_code,
         p.name AS product_name,
         pl.code AS plan_code,
-        pl.name AS plan_name
+        pl.name AS plan_name,
+        pl.quantity AS plan_quantity
       FROM licenses l
       JOIN products p   ON p.id  = l.product_id
       LEFT JOIN plans pl ON pl.id = l.plan_id
@@ -88,7 +91,8 @@ export class LicensesRepository {
         p.code AS product_code,
         p.name AS product_name,
         pl.code AS plan_code,
-        pl.name AS plan_name
+        pl.name AS plan_name,
+        pl.quantity AS plan_quantity
       FROM licenses l
       JOIN products p   ON p.id  = l.product_id
       LEFT JOIN plans pl ON pl.id = l.plan_id
@@ -104,7 +108,8 @@ export class LicensesRepository {
     productId: string,
   ): Promise<License | null> {
     const [row] = await this.sql`
-      SELECT l.*, p.code AS product_code, pl.code AS plan_code
+      SELECT l.*, p.code AS product_code, p.name AS product_name,
+        pl.code AS plan_code, pl.name AS plan_name, pl.quantity AS plan_quantity
       FROM licenses l
       JOIN products p   ON p.id  = l.product_id
       LEFT JOIN plans pl ON pl.id = l.plan_id
@@ -182,7 +187,7 @@ export class LicensesRepository {
       updatedAt:       row.updated_at,
       // joins
       product: row.product_code ? { code: row.product_code, name: row.product_name } : undefined,
-      plan:    row.plan_code    ? { code: row.plan_code,    name: row.plan_name    } : undefined,
+      plan:    row.plan_code    ? { code: row.plan_code,    name: row.plan_name, quantity: row.plan_quantity ?? null } : undefined,
     }
   }
 }

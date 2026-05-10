@@ -359,6 +359,9 @@ Content-Type: application/json
   "trialEndAt": "2026-04-12T10:00:00.000Z",
   "licenseEndAt": null,
   "daysLeft": 14,
+  "planCode": null,
+  "planName": null,
+  "quantity": null,
   "reason": "trial_active",
   "features": { "max_users": 5, "reports": true },
   "canAccess": true,
@@ -375,6 +378,9 @@ Content-Type: application/json
   "trialEndAt": null,
   "licenseEndAt": "2026-12-31T23:59:59.000Z",
   "daysLeft": 276,
+  "planCode": "PRO_MENSAL",
+  "planName": "Plano Pro",
+  "quantity": 30,
   "reason": "licensed",
   "features": { "max_users": 10, "export_pdf": true },
   "canAccess": true,
@@ -493,6 +499,9 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
   "trialEndAt": "2026-04-12T10:00:00.000Z",
   "licenseEndAt": null,
   "daysLeft": 10,
+  "planCode": "PRO_MENSAL",
+  "planName": "Plano Pro",
+  "quantity": 30,
   "reason": "trial_active",
   "features": { "max_users": 5, "reports": true },
   "banner": "Você está no período de avaliação gratuita. Restam 10 dias."
@@ -509,6 +518,9 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
   "trialEndAt": null,
   "licenseEndAt": "2026-04-05T23:59:59.000Z",
   "daysLeft": 3,
+  "planCode": "PRO_MENSAL",
+  "planName": "Plano Pro",
+  "quantity": 30,
   "reason": "grace_period",
   "features": { "max_users": 10, "export_pdf": true },
   "banner": "Seu acesso está em carência. Regularize o pagamento. Restam 3 dia(s)."
@@ -721,6 +733,8 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
   "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
   "licenseStatus": "active",
   "planCode": "PRO_MENSAL",
+  "planName": "Plano Pro",
+  "quantity": 30,
   "expiresAt": "2026-12-31T23:59:59.000Z",
   "features": {
     "max_users": 10,
@@ -759,8 +773,8 @@ async function checkAccess(customerId, productCode) {
     throw new Error(\`Acesso negado: \${data.reason}\`)
   }
 
-  // Acesso liberado — retorna as features do plano contratado
-  return data.features
+  // Acesso liberado — retorna as features e a quantidade genérica do plano
+  return { features: data.features, quantity: data.quantity }
 }`} />
         </Section>
 
@@ -788,6 +802,7 @@ async function checkAccess(customerId, productCode) {
       "allowed": true,
       "licenseStatus": "active",
       "expiresAt": "2026-12-31T23:59:59.000Z",
+      "quantity": 30,
       "features": {
         "max_users": 10,
         "export_pdf": true
@@ -870,6 +885,7 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx`} />
   "description": "Teste por 14 dias...",
   "amount": 100,
   "currency": "BRL",
+  "quantity": 30,
   "intervalUnit": "month",
   "intervalCount": 1,
   "status": "active",

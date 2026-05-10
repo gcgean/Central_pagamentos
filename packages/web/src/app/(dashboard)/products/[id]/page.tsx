@@ -35,6 +35,7 @@ interface Plan {
   interval: string
   intervalUnit?: string
   intervalCount: number
+  quantity?: number | null
   maxUsers?: number
   status?: string
   isArchived: boolean
@@ -47,6 +48,10 @@ const planSchema = z.object({
   amount: z.string().refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0, 'Valor inválido'),
   interval: z.enum(['day', 'month', 'year']),
   intervalCount: z.coerce.number().int().min(1),
+  quantity: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined ? undefined : v),
+    z.coerce.number().int().min(0).optional(),
+  ),
   maxUsers: z.coerce.number().int().min(1).optional(),
 })
 
@@ -138,6 +143,7 @@ export default function ProductDetailPage() {
         intervalUnit: interval,           // API espera intervalUnit
         amount: Math.round(parseFloat(data.amount) * 100),
         intervalCount: Number(data.intervalCount),
+        quantity: data.quantity === undefined ? undefined : Number(data.quantity),
         maxUsers: data.maxUsers ? Number(data.maxUsers) : undefined,
       }
       return api.post(`/products/${id}/plans`, payload)
@@ -163,6 +169,7 @@ export default function ProductDetailPage() {
         intervalUnit: interval,
         amount: Math.round(parseFloat(data.amount) * 100),
         intervalCount: Number(data.intervalCount),
+        quantity: data.quantity === undefined ? undefined : Number(data.quantity),
         maxUsers: data.maxUsers ? Number(data.maxUsers) : undefined,
       }
       return api.put(`/products/${id}/plans/${editingPlan.id}`, payload)
@@ -202,6 +209,7 @@ export default function ProductDetailPage() {
       amount: (plan.amount / 100).toFixed(2),
       interval: (plan.intervalUnit ?? plan.interval ?? 'month') as 'day' | 'month' | 'year',
       intervalCount: plan.intervalCount,
+      quantity: plan.quantity ?? undefined,
       maxUsers: plan.maxUsers,
     })
     setShowEditPlanModal(true)
@@ -287,6 +295,7 @@ export default function ProductDetailPage() {
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Nome</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Valor</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Periodicidade</th>
+                    <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Quantidade</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Max. Usuários</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
                     <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase text-right sticky right-0 bg-white z-10">
@@ -310,6 +319,7 @@ export default function ProductDetailPage() {
                       <td className="px-6 py-3 text-sm text-gray-600">
                         A cada {plan.intervalCount} {intervalLabels[plan.intervalUnit ?? plan.interval] ?? plan.intervalUnit ?? plan.interval}
                       </td>
+                      <td className="px-6 py-3 text-sm text-gray-500">{plan.quantity ?? '—'}</td>
                       <td className="px-6 py-3 text-sm text-gray-500">{plan.maxUsers ?? '—'}</td>
                       <td className="px-6 py-3">
                         <Badge variant={isArchived(plan) ? 'gray' : 'green'}>
@@ -406,7 +416,7 @@ export default function ProductDetailPage() {
             />
             <Input
               id="plan-intervalCount"
-              label="Quantidade"
+              label="A cada (intervalo)"
               type="number"
               min="1"
               placeholder="1"
@@ -414,6 +424,15 @@ export default function ProductDetailPage() {
               {...register('intervalCount')}
             />
           </div>
+          <Input
+            id="plan-quantity"
+            label="Quantidade (limite)"
+            type="number"
+            min="0"
+            placeholder="30"
+            error={planErrors.quantity?.message}
+            {...register('quantity')}
+          />
           <Input
             id="plan-maxUsers"
             label="Máx. de Usuários (opcional)"
@@ -487,7 +506,7 @@ export default function ProductDetailPage() {
             />
             <Input
               id="plan-edit-intervalCount"
-              label="Quantidade"
+              label="A cada (intervalo)"
               type="number"
               min="1"
               placeholder="1"
@@ -495,6 +514,15 @@ export default function ProductDetailPage() {
               {...register('intervalCount')}
             />
           </div>
+          <Input
+            id="plan-edit-quantity"
+            label="Quantidade (limite)"
+            type="number"
+            min="0"
+            placeholder="30"
+            error={planErrors.quantity?.message}
+            {...register('quantity')}
+          />
           <Input
             id="plan-edit-maxUsers"
             label="Máx. de Usuários (opcional)"

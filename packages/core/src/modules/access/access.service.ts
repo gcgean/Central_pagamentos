@@ -21,6 +21,8 @@ export interface AccessValidationResult {
   licenseId?: string
   licenseStatus?: string
   planCode?: string
+  planName?: string
+  quantity?: number | null
   expiresAt?: string | null
   features?: Record<string, unknown>
   checkedAt: string
@@ -81,8 +83,14 @@ export class AccessService {
           reason: 'grace_period',
           licenseId: license.id,
           licenseStatus: 'grace_period',
+          planCode: license.plan?.code,
+          planName: license.plan?.name,
+          quantity: license.plan?.quantity ?? null,
           expiresAt: license.graceUntil?.toISOString(),
-          features: license.featureSet,
+          features: {
+            ...(license.featureSet ?? {}),
+            max_users: license.maxUsers,
+          },
         }
       }
       return { ...base, allowed: false, reason: 'license_suspended', licenseId: license.id }
@@ -117,6 +125,8 @@ export class AccessService {
       licenseId: license.id,
       licenseStatus: license.status,
       planCode: license.plan?.code,
+      planName: license.plan?.name,
+      quantity: license.plan?.quantity ?? null,
       expiresAt: license.expiresAt?.toISOString() ?? null,
       features: {
         ...(license.featureSet ?? {}),
@@ -138,6 +148,7 @@ export class AccessService {
         allowed: l.status === 'active',
         licenseStatus: l.status,
         expiresAt: l.expiresAt?.toISOString() ?? null,
+        quantity: l.plan?.quantity ?? null,
         features: l.featureSet,
       })),
     }
@@ -217,6 +228,9 @@ export class AccessService {
           trialEndAt: null,
           licenseEndAt: activeLicense.expiresAt?.toISOString() ?? null,
           daysLeft,
+        planCode: activeLicense.plan?.code ?? null,
+        planName: activeLicense.plan?.name ?? null,
+        quantity: activeLicense.plan?.quantity ?? null,
           reason: 'licensed',
           features: {
             ...(activeLicense.featureSet ?? {}),
@@ -240,6 +254,9 @@ export class AccessService {
             trialEndAt: null,
             licenseEndAt: activeLicense.graceUntil.toISOString(),
             daysLeft,
+            planCode: activeLicense.plan?.code ?? null,
+            planName: activeLicense.plan?.name ?? null,
+            quantity: activeLicense.plan?.quantity ?? null,
             reason: 'grace_period',
             features: {
               ...(activeLicense.featureSet ?? {}),
@@ -266,6 +283,9 @@ export class AccessService {
           trialEndAt: activeLicense.expiresAt?.toISOString() ?? null,
           licenseEndAt: null,
           daysLeft,
+          planCode: activeLicense.plan?.code ?? null,
+          planName: activeLicense.plan?.name ?? null,
+          quantity: activeLicense.plan?.quantity ?? null,
           reason: 'trial_active',
           features: {
             ...(activeLicense.featureSet ?? {}),
@@ -324,6 +344,9 @@ export class AccessService {
         trialEndAt: expiresAt.toISOString(),
         licenseEndAt: null,
         daysLeft: product.trialDays,
+        planCode: null,
+        planName: null,
+        quantity: null,
         reason: 'trial_active',
         features: {
           ...(trialLic.featureSet ?? {}),
@@ -409,22 +432,27 @@ export class AccessService {
           const daysLeft = Math.max(0, dayjs(activeLicense.graceUntil).diff(dayjs(), 'day'))
           return this.cacheStatus(
             cacheKey,
-            this.buildStatusResponse(
-              customerId,
-              productId,
-              activeLicense.id,
-              'licensed',
-              true,
-              null,
-              activeLicense.graceUntil.toISOString(),
-              daysLeft,
-              'grace_period',
-              `Seu acesso está em carência. Regularize o pagamento. Restam ${daysLeft} dia(s).`,
-              {
-                ...(activeLicense.featureSet ?? {}),
-                max_users: activeLicense.maxUsers,
-              },
-            ),
+            {
+              ...this.buildStatusResponse(
+                customerId,
+                productId,
+                activeLicense.id,
+                'licensed',
+                true,
+                null,
+                activeLicense.graceUntil.toISOString(),
+                daysLeft,
+                'grace_period',
+                `Seu acesso está em carência. Regularize o pagamento. Restam ${daysLeft} dia(s).`,
+                {
+                  ...(activeLicense.featureSet ?? {}),
+                  max_users: activeLicense.maxUsers,
+                },
+              ),
+              planCode: activeLicense.plan?.code ?? null,
+              planName: activeLicense.plan?.name ?? null,
+              quantity: activeLicense.plan?.quantity ?? null,
+            },
           )
         }
         return this.cacheStatus(
@@ -452,22 +480,27 @@ export class AccessService {
             : null
           return this.cacheStatus(
             cacheKey,
-            this.buildStatusResponse(
-              customerId,
-              productId,
-              activeLicense.id,
-              'licensed',
-              true,
-              null,
-              activeLicense.expiresAt?.toISOString() ?? null,
-              daysLeft,
-              'licensed',
-              null,
-              {
-                ...(activeLicense.featureSet ?? {}),
-                max_users: activeLicense.maxUsers,
-              },
-            ),
+            {
+              ...this.buildStatusResponse(
+                customerId,
+                productId,
+                activeLicense.id,
+                'licensed',
+                true,
+                null,
+                activeLicense.expiresAt?.toISOString() ?? null,
+                daysLeft,
+                'licensed',
+                null,
+                {
+                  ...(activeLicense.featureSet ?? {}),
+                  max_users: activeLicense.maxUsers,
+                },
+              ),
+              planCode: activeLicense.plan?.code ?? null,
+              planName: activeLicense.plan?.name ?? null,
+              quantity: activeLicense.plan?.quantity ?? null,
+            },
           )
         }
 
@@ -477,23 +510,28 @@ export class AccessService {
           : null
         return this.cacheStatus(
           cacheKey,
-          this.buildStatusResponse(
-            customerId,
-            productId,
-            activeLicense.id,
-            'trial',
-            true,
-            activeLicense.expiresAt?.toISOString() ?? null,
-            null,
-            daysLeft,
-            'trial_active',
-            `Você está no período de avaliação gratuita. Restam ${daysLeft} dia(s).`,
-            {
-              ...(activeLicense.featureSet ?? {}),
-              max_users: activeLicense.maxUsers,
-            },
-            activeLicense.startsAt.toISOString(),
-          ),
+          {
+            ...this.buildStatusResponse(
+              customerId,
+              productId,
+              activeLicense.id,
+              'trial',
+              true,
+              activeLicense.expiresAt?.toISOString() ?? null,
+              null,
+              daysLeft,
+              'trial_active',
+              `Você está no período de avaliação gratuita. Restam ${daysLeft} dia(s).`,
+              {
+                ...(activeLicense.featureSet ?? {}),
+                max_users: activeLicense.maxUsers,
+              },
+              activeLicense.startsAt.toISOString(),
+            ),
+            planCode: activeLicense.plan?.code ?? null,
+            planName: activeLicense.plan?.name ?? null,
+            quantity: activeLicense.plan?.quantity ?? null,
+          },
         )
       }
     }
@@ -503,20 +541,25 @@ export class AccessService {
     if (trialLicense) {
       return this.cacheStatus(
         cacheKey,
-        this.buildStatusResponse(
-          customerId,
-          productId,
-          trialLicense.id,
-          'blocked',
-          false,
-          trialLicense.expiresAt?.toISOString() ?? null,
-          null,
-          0,
-          'trial_expired',
-          'Seu período de avaliação expirou. Adquira uma licença para continuar usando o sistema.',
-          null,
-          trialLicense.startsAt.toISOString(),
-        ),
+        {
+          ...this.buildStatusResponse(
+            customerId,
+            productId,
+            trialLicense.id,
+            'blocked',
+            false,
+            trialLicense.expiresAt?.toISOString() ?? null,
+            null,
+            0,
+            'trial_expired',
+            'Seu período de avaliação expirou. Adquira uma licença para continuar usando o sistema.',
+            null,
+            trialLicense.startsAt.toISOString(),
+          ),
+          planCode: trialLicense.plan?.code ?? null,
+          planName: trialLicense.plan?.name ?? null,
+          quantity: trialLicense.plan?.quantity ?? null,
+        },
       )
     }
 
@@ -567,6 +610,9 @@ export class AccessService {
       trialEndAt: extra?.trialEndAt ?? null,
       licenseEndAt: null,
       daysLeft: null,
+      planCode: null,
+      planName: null,
+      quantity: null,
       reason,
       features: null,
       canAccess: false,
@@ -598,6 +644,9 @@ export class AccessService {
       trialEndAt,
       licenseEndAt,
       daysLeft,
+      planCode: null,
+      planName: null,
+      quantity: null,
       reason,
       features,
       banner,

@@ -136,6 +136,9 @@ Content-Type: application/json
   "trialEndAt": "2026-04-12T10:00:00.000Z",
   "licenseEndAt": null,
   "daysLeft": 14,
+  "planCode": null,
+  "planName": null,
+  "quantity": null,
   "reason": "trial_active",
   "features": { "max_users": 5, "reports": true },
   "canAccess": true,
@@ -155,6 +158,9 @@ Content-Type: application/json
   "trialEndAt": null,
   "licenseEndAt": "2026-12-31T23:59:59.000Z",
   "daysLeft": 276,
+  "planCode": "PRO_MENSAL",
+  "planName": "Plano Pro",
+  "quantity": 30,
   "reason": "licensed",
   "features": { "max_users": 10, "export_pdf": true },
   "canAccess": true,
@@ -219,6 +225,9 @@ X-API-Key: hub_live_xxxxxxxxxxxxxxxxxxxx
   "trialEndAt": "2026-04-12T10:00:00.000Z",
   "licenseEndAt": null,
   "daysLeft": 10,
+  "planCode": "PRO_MENSAL",
+  "planName": "Plano Pro",
+  "quantity": 30,
   "reason": "trial_active",
   "features": { "max_users": 5, "reports": true },
   "banner": "Você está no período de avaliação gratuita. Restam 10 dias."
@@ -262,6 +271,8 @@ Resposta de sucesso:
   "licenseId": "f0e1d2c3-b4a5-6789-cdef-012345678901",
   "licenseStatus": "active",
   "planCode": "PRO_MENSAL",
+  "planName": "Plano Pro",
+  "quantity": 30,
   "expiresAt": "2026-12-31T23:59:59.000Z",
   "features": {
     "max_users": 10,
@@ -307,6 +318,7 @@ Resposta:
       "allowed": true,
       "licenseStatus": "active",
       "expiresAt": "2026-12-31T23:59:59.000Z",
+      "quantity": 30,
       "features": { "max_users": 10 }
     }
   ]
@@ -403,6 +415,7 @@ Contrato por item:
   "description": "Teste por 14 dias...",
   "amount": 100,
   "currency": "BRL",
+  "quantity": 30,
   "intervalUnit": "month",
   "intervalCount": 1,
   "status": "active",
@@ -434,8 +447,11 @@ Filtros:
 - `includeArchived=true|false` (padrão: `false`)
 
 Retorno:
-- Mesmo contrato público de plano (`id`, `code`, `name`, `description`, `amount`, `currency`, `intervalUnit`, `intervalCount`, `status`, `isActive`, `createdAt`, `updatedAt`).
+- Mesmo contrato público de plano (`id`, `code`, `name`, `description`, `amount`, `currency`, `quantity`, `intervalUnit`, `intervalCount`, `status`, `isActive`, `createdAt`, `updatedAt`).
 - A API key só acessa o produto ao qual está vinculada.
+
+Observação:
+- `quantity` é um campo genérico configurado no plano e retornado pelo Hub. O satélite define o significado (lotes, usuários, anúncios, etc.) e valida o uso localmente.
 
 ### Recomendação de mapeamento no satélite (evitar divergência de plano)
 

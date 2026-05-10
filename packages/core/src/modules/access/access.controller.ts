@@ -153,6 +153,7 @@ Use-o para consultas periódicas após o onboarding inicial.
       description: plan.description ?? null,
       amount: plan.amount,
       currency: plan.currency,
+      quantity: plan.quantity ?? null,
       intervalUnit: plan.intervalUnit,
       intervalCount: plan.intervalCount,
       status: plan.status,
