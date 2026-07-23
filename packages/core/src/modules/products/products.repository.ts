@@ -44,6 +44,11 @@ export class ProductsRepository {
     const newStatus = data.status
       ?? (data.isActive === true ? 'active' : data.isActive === false ? 'inactive' : null)
 
+    // gateway_name aceita null explícito para reverter ao gateway padrão global —
+    // por isso usa CASE (campo enviado) em vez de COALESCE (que nunca zeraria o valor).
+    const gatewayNameProvided = Object.prototype.hasOwnProperty.call(data, 'gatewayName')
+    const gatewayNameValue = data.gatewayName ?? null
+
     const [row] = await this.sql`
       UPDATE products SET
         name         = COALESCE(${data.name ?? null}, name),
@@ -51,7 +56,7 @@ export class ProductsRepository {
         billing_type = COALESCE(${data.billingType ?? null}, billing_type),
         status       = COALESCE(${newStatus ?? null}::product_status, status),
         trial_days   = COALESCE(${data.trialDays ?? null}, trial_days),
-        gateway_name = COALESCE(${data.gatewayName ?? null}, gateway_name),
+        gateway_name = CASE WHEN ${gatewayNameProvided} THEN ${gatewayNameValue} ELSE gateway_name END,
         updated_at   = NOW()
       WHERE id = ${id}
       RETURNING *

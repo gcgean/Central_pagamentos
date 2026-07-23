@@ -23,6 +23,7 @@ interface Product {
   name: string
   description?: string
   trialDays?: number
+  gatewayName?: 'asaas' | 'mercadopago' | 'livepix' | null
   isActive: boolean
   createdAt: string
 }
@@ -59,7 +60,14 @@ type PlanFormData = z.infer<typeof planSchema>
 
 const productSchema = z.object({
   trialDays: z.coerce.number().int().min(0, 'Dias de trial deve ser maior ou igual a 0'),
+  gatewayName: z.enum(['', 'asaas', 'mercadopago', 'livepix']).optional(),
 })
+
+const gatewayLabels: Record<string, string> = {
+  asaas: 'Asaas',
+  mercadopago: 'Mercado Pago',
+  livepix: 'LivePix',
+}
 
 type ProductFormData = z.infer<typeof productSchema>
 
@@ -132,7 +140,7 @@ export default function ProductDetailPage() {
     formState: { errors: productFormErrors },
   } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
-    defaultValues: { trialDays: product?.trialDays ?? 0 },
+    defaultValues: { trialDays: product?.trialDays ?? 0, gatewayName: product?.gatewayName ?? '' },
   })
 
   const createPlanMutation = useMutation({
@@ -188,7 +196,10 @@ export default function ProductDetailPage() {
   })
 
   const updateProductMutation = useMutation({
-    mutationFn: (data: ProductFormData) => api.put(`/products/${id}`, { trialDays: Number(data.trialDays) }),
+    mutationFn: (data: ProductFormData) => api.put(`/products/${id}`, {
+      trialDays: Number(data.trialDays),
+      gatewayName: data.gatewayName || null,
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['product', id] })
       setShowEditProductModal(false)
@@ -245,6 +256,9 @@ export default function ProductDetailPage() {
             <h2 className="text-lg font-semibold text-gray-900">{product.name}</h2>
             {product.description && <p className="text-sm text-gray-500 mt-1">{product.description}</p>}
             <p className="text-sm text-gray-500 mt-1">Trial gratuito: {product.trialDays ?? 0} dia(s)</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Gateway: {product.gatewayName ? gatewayLabels[product.gatewayName] ?? product.gatewayName : 'Padrão (Configurações)'}
+            </p>
             <p className="text-xs text-gray-400 mt-2">Criado em {formatDate(product.createdAt)}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -252,7 +266,7 @@ export default function ProductDetailPage() {
               variant="outline"
               size="sm"
               onClick={() => {
-                resetProduct({ trialDays: product.trialDays ?? 0 })
+                resetProduct({ trialDays: product.trialDays ?? 0, gatewayName: product.gatewayName ?? '' })
                 setProductError('')
                 setShowEditProductModal(true)
               }}
@@ -552,7 +566,7 @@ export default function ProductDetailPage() {
         onClose={() => {
           setShowEditProductModal(false)
           setProductError('')
-          resetProduct({ trialDays: product.trialDays ?? 0 })
+          resetProduct({ trialDays: product.trialDays ?? 0, gatewayName: product.gatewayName ?? '' })
         }}
         title="Editar Produto"
         size="sm"
@@ -574,6 +588,17 @@ export default function ProductDetailPage() {
             error={productFormErrors.trialDays?.message}
             {...registerProduct('trialDays')}
           />
+          <Select
+            id="product-gatewayName"
+            label="Gateway de Pagamento"
+            placeholder="Usar gateway padrão (Configurações)"
+            options={[
+              { value: 'asaas', label: 'Asaas' },
+              { value: 'mercadopago', label: 'Mercado Pago' },
+              { value: 'livepix', label: 'LivePix' },
+            ]}
+            {...registerProduct('gatewayName')}
+          />
           <div className="flex gap-3 justify-end pt-2">
             <Button
               type="button"
@@ -581,7 +606,7 @@ export default function ProductDetailPage() {
               onClick={() => {
                 setShowEditProductModal(false)
                 setProductError('')
-                resetProduct({ trialDays: product.trialDays ?? 0 })
+                resetProduct({ trialDays: product.trialDays ?? 0, gatewayName: product.gatewayName ?? '' })
               }}
             >
               Cancelar

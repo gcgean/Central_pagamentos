@@ -19,6 +19,7 @@ const schema = z.object({
   description: z.string().optional(),
   billingType: z.enum(['recurring', 'one_time', 'hybrid']),
   isActive:    z.boolean().default(true),
+  gatewayName: z.enum(['', 'asaas', 'mercadopago', 'livepix']).optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -35,10 +36,14 @@ export default function NewProductPage() {
   const isActive = watch('isActive')
 
   const mutation = useMutation({
-    mutationFn: (data: FormData) => api.post('/products', {
-      ...data,
-      status: data.isActive ? 'active' : 'inactive',
-    }),
+    mutationFn: (data: FormData) => {
+      const { gatewayName, ...rest } = data
+      return api.post('/products', {
+        ...rest,
+        status: data.isActive ? 'active' : 'inactive',
+        gatewayName: gatewayName || undefined,
+      })
+    },
     onSuccess: (res) => router.push(`/products/${res.data.id}`),
     onError: (err: unknown) => {
       const axiosErr = err as { response?: { data?: { message?: string } } }
@@ -108,6 +113,21 @@ export default function NewProductPage() {
               rows={3}
               {...register('description')}
             />
+
+            <Select
+              id="gatewayName"
+              label="Gateway de Pagamento (opcional)"
+              placeholder="Usar gateway padrão (Configurações)"
+              options={[
+                { value: 'asaas', label: 'Asaas' },
+                { value: 'mercadopago', label: 'Mercado Pago' },
+                { value: 'livepix', label: 'LivePix' },
+              ]}
+              {...register('gatewayName')}
+            />
+            <p className="text-xs text-gray-500 -mt-2">
+              Roteia as cobranças deste produto para um gateway específico, independente do gateway ativo global.
+            </p>
 
             <div className="flex items-center gap-3">
               <button

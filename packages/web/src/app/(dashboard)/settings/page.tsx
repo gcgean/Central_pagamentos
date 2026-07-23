@@ -11,25 +11,29 @@ import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 import {
   Settings, CreditCard, CheckCircle2, XCircle,
-  Eye, EyeOff, Zap, TestTube2, AlertCircle,
+  Eye, EyeOff, Zap, TestTube2, AlertCircle, Radio, Link2,
 } from 'lucide-react'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type ActiveGateway = 'mercadopago' | 'asaas'
+type ActiveGateway = 'mercadopago' | 'asaas' | 'livepix'
 
 interface GatewayConfig {
   activeGateway: ActiveGateway
   mercadopago: { accessToken: string; webhookSecret: string; isConfigured: boolean }
   asaas: { apiKey: string; isConfigured: boolean }
+  livepix: { clientId: string; clientSecret: string; scope: string; isConfigured: boolean }
 }
 
 const schema = z.object({
-  activeGateway: z.enum(['mercadopago', 'asaas']),
+  activeGateway: z.enum(['mercadopago', 'asaas', 'livepix']),
   mercadopago_accessToken: z.string().optional(),
   mercadopago_publicKey: z.string().optional(),
   mercadopago_webhookSecret: z.string().optional(),
   asaas_apiKey: z.string().optional(),
+  livepix_clientId: z.string().optional(),
+  livepix_clientSecret: z.string().optional(),
+  livepix_scope: z.string().optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -141,6 +145,7 @@ export default function SettingsPage() {
   const queryClient = useQueryClient()
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [webhookResult, setWebhookResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   const { data: config, isLoading } = useQuery<GatewayConfig>({
     queryKey: ['settings-gateway'],
@@ -150,13 +155,16 @@ export default function SettingsPage() {
     },
   })
 
-  const { control, handleSubmit, watch, setValue, reset } = useForm<FormData>({
+  const { control, register, handleSubmit, watch, setValue, reset } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       activeGateway: 'asaas',
       mercadopago_accessToken: '',
       mercadopago_webhookSecret: '',
       asaas_apiKey: '',
+      livepix_clientId: '',
+      livepix_clientSecret: '',
+      livepix_scope: '',
     },
     values: config
       ? {
@@ -164,6 +172,9 @@ export default function SettingsPage() {
           mercadopago_accessToken: '',
           mercadopago_webhookSecret: '',
           asaas_apiKey: '',
+          livepix_clientId: config.livepix?.clientId ?? '',
+          livepix_clientSecret: '',
+          livepix_scope: config.livepix?.scope ?? '',
         }
       : undefined,
   })
@@ -182,6 +193,12 @@ export default function SettingsPage() {
       if (data.asaas_apiKey) {
         payload.asaas = { apiKey: data.asaas_apiKey }
       }
+      if (data.livepix_clientId || data.livepix_clientSecret || data.livepix_scope) {
+        payload.livepix = {}
+        if (data.livepix_clientId) payload.livepix.clientId = data.livepix_clientId
+        if (data.livepix_clientSecret) payload.livepix.clientSecret = data.livepix_clientSecret
+        if (data.livepix_scope) payload.livepix.scope = data.livepix_scope
+      }
       const { data: res } = await api.put('/settings/gateway', payload)
       return res
     },
@@ -192,9 +209,30 @@ export default function SettingsPage() {
         mercadopago_accessToken: '',
         mercadopago_webhookSecret: '',
         asaas_apiKey: '',
+        livepix_clientId: updated.livepix?.clientId ?? '',
+        livepix_clientSecret: '',
+        livepix_scope: updated.livepix?.scope ?? '',
       })
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
+    },
+  })
+
+  const registerWebhookMutation = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post('/settings/gateway/livepix/webhook')
+      return data as { ok: boolean; webhookUrl: string; message: string }
+    },
+    onSuccess: (res) => {
+      setWebhookResult({ ok: true, message: `${res.message} (${res.webhookUrl})` })
+      setTimeout(() => setWebhookResult(null), 6000)
+    },
+    onError: (err: any) => {
+      setWebhookResult({
+        ok: false,
+        message: err?.response?.data?.message ?? 'Erro ao registrar webhook',
+      })
+      setTimeout(() => setWebhookResult(null), 6000)
     },
   })
 
@@ -271,6 +309,15 @@ export default function SettingsPage() {
                       label="Asaas"
                       description="Cobrança via API Asaas — PIX, Boleto e Cartão."
                       configured={config?.asaas.isConfigured}
+                    />
+                    <GatewayOption
+                      value="livepix"
+                      selected={field.value === 'livepix'}
+                      onSelect={() => field.onChange('livepix')}
+                      icon={<Radio size={16} className="text-purple-600" />}
+                      label="LivePix"
+                      description="Checkout hospedado via LivePix. Sem estorno/cancelamento por API — veja limitações abaixo."
+                      configured={config?.livepix.isConfigured}
                     />
                   </>
                 )}
@@ -420,6 +467,120 @@ export default function SettingsPage() {
                     />
                   )}
                 />
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
+        {/* LivePix credentials */}
+        {activeGateway === 'livepix' && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Radio size={16} className="text-purple-600" />
+                <h3 className="text-sm font-semibold text-gray-900">Credenciais — LivePix</h3>
+              </div>
+            </CardHeader>
+            <CardBody>
+              <div className="space-y-4">
+                {config?.livepix.isConfigured && (
+                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <CheckCircle2 size={14} className="text-green-600" />
+                    <div>
+                      <p className="text-sm font-medium text-green-800">Credenciais configuradas</p>
+                      <p className="text-xs text-green-600">
+                        Client ID: <code className="font-mono">{config.livepix.clientId}</code>
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
+                  <p className="font-medium">Limitações conhecidas da LivePix:</p>
+                  <p>• Sem estorno nem cancelamento de cobrança/assinatura via API — só pelo painel da LivePix.</p>
+                  <p>• Checkout só hospedado (checkout.livepix.gg), sem QR Code PIX direto nem coleta de CPF/CNPJ.</p>
+                  <p>• Termos de Uso da LivePix descrevem o serviço como doação criador↔audiência, sem previsão de cobrança comercial de terceiros.</p>
+                </div>
+
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-700 space-y-1">
+                  <p className="font-medium">Onde obter suas credenciais:</p>
+                  <p>
+                    Crie uma aplicação nas configurações da sua conta em{' '}
+                    <a
+                      href="https://livepix.gg"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline font-medium"
+                    >
+                      livepix.gg
+                    </a>
+                    {' '}para obter o Client ID e Client Secret (OAuth2 client_credentials).
+                  </p>
+                </div>
+
+                <Input
+                  id="livepix-client-id"
+                  label="Client ID"
+                  placeholder={config?.livepix.isConfigured ? 'Deixe em branco para manter o atual' : 'client_id da aplicação LivePix'}
+                  {...register('livepix_clientId')}
+                />
+
+                <Controller
+                  name="livepix_clientSecret"
+                  control={control}
+                  render={({ field }) => (
+                    <SecretInput
+                      id="livepix-client-secret"
+                      label="Client Secret"
+                      placeholder={config?.livepix.isConfigured ? 'Deixe em branco para manter o atual' : 'client_secret da aplicação LivePix'}
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      hint="Nunca exibido em texto puro depois de salvo"
+                    />
+                  )}
+                />
+
+                <Input
+                  id="livepix-scope"
+                  label="Scope (opcional)"
+                  placeholder="ex: account:read payments:read subscriptions:create"
+                  {...register('livepix_scope')}
+                />
+                <p className="text-xs text-gray-400 -mt-2">
+                  Confira os scopes exatos liberados para sua aplicação no painel da LivePix.
+                </p>
+
+                {config?.livepix.isConfigured && (
+                  <div className="pt-2 border-t border-gray-100">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Webhook</p>
+                        <p className="text-xs text-gray-500">Registra a URL de callback na LivePix (idempotente).</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => registerWebhookMutation.mutate()}
+                        loading={registerWebhookMutation.isPending}
+                      >
+                        <Link2 size={14} /> Registrar Webhook
+                      </Button>
+                    </div>
+                    {webhookResult && (
+                      <div className={`mt-2 flex items-center gap-2 p-2 rounded-lg border text-xs ${
+                        webhookResult.ok
+                          ? 'bg-green-50 border-green-200 text-green-800'
+                          : 'bg-red-50 border-red-200 text-red-800'
+                      }`}>
+                        {webhookResult.ok
+                          ? <CheckCircle2 size={12} className="flex-shrink-0" />
+                          : <XCircle size={12} className="flex-shrink-0" />}
+                        <p>{webhookResult.message}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </CardBody>
           </Card>
