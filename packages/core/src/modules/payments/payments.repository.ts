@@ -61,6 +61,43 @@ export class PaymentsRepository {
     return row
   }
 
+  /**
+   * Localiza uma cobrança pendente recente da mesma origem e gateway com link de
+   * checkout — para reaproveitar em vez de criar uma nova (reduz chamadas ao
+   * gateway e evita gerar múltiplos PIX quando o cliente clica várias vezes).
+   */
+  async findReusablePendingCharge(
+    originType: string,
+    originId: string,
+    gatewayName: string,
+    maxAgeMinutes: number,
+  ) {
+    const rows = originType === 'subscription'
+      ? await this.sql`
+          SELECT c.* FROM charges c
+          JOIN invoices i ON i.id = c.invoice_id
+          WHERE i.subscription_id = ${originId}
+            AND c.gateway_name = ${gatewayName}
+            AND c.status = 'pending'
+            AND c.checkout_url IS NOT NULL
+            AND c.created_at > NOW() - (${maxAgeMinutes} * INTERVAL '1 minute')
+          ORDER BY c.created_at DESC
+          LIMIT 1
+        `
+      : await this.sql`
+          SELECT c.* FROM charges c
+          JOIN invoices i ON i.id = c.invoice_id
+          WHERE i.order_id = ${originId}
+            AND c.gateway_name = ${gatewayName}
+            AND c.status = 'pending'
+            AND c.checkout_url IS NOT NULL
+            AND c.created_at > NOW() - (${maxAgeMinutes} * INTERVAL '1 minute')
+          ORDER BY c.created_at DESC
+          LIMIT 1
+        `
+    return rows[0] ?? null
+  }
+
   async findChargeByExternalId(gatewayName: string, externalChargeId: string) {
     const [row] = await this.sql`
       SELECT * FROM charges

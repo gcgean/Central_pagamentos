@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadGatewayException, BadRequestException } from '@nestjs/common'
+import { Injectable, Logger, BadGatewayException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import axios, { AxiosInstance } from 'axios'
 
@@ -73,6 +73,11 @@ export class LivePixGateway {
   // Memoriza o método de autenticação que funcionou, para não fazer a tentativa
   // dupla (basic + post) a cada emissão de token — reduz chamadas ao OAuth.
   private preferredAuthMethod?: 'basic' | 'post'
+  // Proteção de rate limit: a LivePix limita por endpoint (reset a cada minuto) e
+  // retorna 429; uso abusivo pode encerrar a conta. Ao receber 429 (ou quando o
+  // header X-RateLimit-Remaining zera), entramos em cooldown e recusamos novas
+  // chamadas localmente, sem bater na LivePix, até o limite resetar.
+  private rateLimitedUntil = 0
 
   constructor(private readonly config: ConfigService) {
     this.clientId = config.get<string>('LIVEPIX_CLIENT_ID', '')
@@ -92,10 +97,25 @@ export class LivePixGateway {
     })
 
     this.client.interceptors.response.use(
-      res => res,
+      res => {
+        this.trackRateLimitHeaders(res.headers)
+        return res
+      },
       err => {
+        const status = err.response?.status
+        if (status === 429) {
+          const cooldownMs = this.computeCooldownMs(err.response?.headers)
+          this.rateLimitedUntil = Math.max(this.rateLimitedUntil, Date.now() + cooldownMs)
+          this.logger.warn(
+            `LivePix rate limit (429) em ${err.config?.url} — cooldown de ${Math.ceil(cooldownMs / 1000)}s`,
+          )
+          throw new HttpException(
+            'Muitas solicitações de pagamento em sequência. Aguarde um instante e tente novamente.',
+            HttpStatus.TOO_MANY_REQUESTS,
+          )
+        }
         this.logger.error(
-          `LivePix API error: ${err.response?.status} ${err.config?.url}`,
+          `LivePix API error: ${status} ${err.config?.url}`,
           err.response?.data,
         )
         throw new BadGatewayException(
@@ -234,12 +254,44 @@ export class LivePixGateway {
     currency?: string
     redirectUrl: string
   }): Promise<LivePixCheckoutInit> {
+    this.assertNotRateLimited()
     const { data } = await this.client.post('/v2/payments', {
       amount: params.amount,
       currency: params.currency ?? 'BRL',
       redirectUrl: params.redirectUrl,
     })
     return data.data
+  }
+
+  // ─── Rate limit (proteção contra 429 / bloqueio de conta) ────────────────────
+
+  /** Recusa a chamada localmente enquanto estivermos em cooldown de rate limit. */
+  private assertNotRateLimited(): void {
+    const remainingMs = this.rateLimitedUntil - Date.now()
+    if (remainingMs > 0) {
+      const waitS = Math.ceil(remainingMs / 1000)
+      throw new HttpException(
+        `Aguarde ${waitS}s antes de gerar uma nova cobrança (limite de requisições da LivePix).`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      )
+    }
+  }
+
+  /** Se o provedor sinalizar que o limite acabou (remaining <= 0), entra em cooldown. */
+  private trackRateLimitHeaders(headers: any): void {
+    const remaining = Number(headers?.['x-ratelimit-remaining'])
+    if (Number.isFinite(remaining) && remaining <= 0) {
+      this.rateLimitedUntil = Math.max(this.rateLimitedUntil, Date.now() + 60_000)
+    }
+  }
+
+  /** Duração do cooldown a partir do Retry-After (se houver) ou do reset por minuto. */
+  private computeCooldownMs(headers: any): number {
+    const retryAfter = Number(headers?.['retry-after'])
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+      return Math.min(retryAfter, 120) * 1000
+    }
+    return 60_000 // o limite da LivePix reseta a cada minuto
   }
 
   async getPayment(paymentId: string): Promise<LivePixPayment> {

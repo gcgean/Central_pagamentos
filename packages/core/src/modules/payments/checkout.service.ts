@@ -216,6 +216,29 @@ export class CheckoutService {
     this.livepix.setCredentials(gwConfig.livepix.clientId, gwConfig.livepix.clientSecret, gwConfig.livepix.scope)
 
     const dueDate = dayjs().add(3, 'day').format('YYYY-MM-DD')
+
+    // Reaproveita uma cobrança LivePix pendente recente da mesma origem, em vez de
+    // criar uma nova a cada clique — reduz chamadas a POST /v2/payments e protege
+    // contra o rate limit / bloqueio da conta na LivePix.
+    const reuseWindowMin = Number(this.config.get<string>('LIVEPIX_REUSE_WINDOW_MINUTES', '15')) || 15
+    const reusable = await this.repo.findReusablePendingCharge(params.originType, params.originId, 'livepix', reuseWindowMin)
+    if (reusable) {
+      this.logger.log(`Reaproveitando cobrança LivePix pendente ${reusable.id} para ${params.originType}:${params.originId}`)
+      return {
+        chargeId: reusable.id,
+        externalChargeId: reusable.external_charge_id,
+        status: reusable.status,
+        checkoutUrl: reusable.checkout_url,
+        pixCode: null,
+        pixQrCode: null,
+        pixPayload: null,
+        boletoUrl: null,
+        amount: reusable.amount,
+        currency: reusable.currency ?? 'BRL',
+        dueDate,
+      }
+    }
+
     const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
     // Redirect pós-pagamento: prioriza a URL informada pelo sistema satélite
     // (ex: NoSigilo). Só aceita http(s); senão cai no endereço do próprio Hub.
