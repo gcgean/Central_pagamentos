@@ -153,6 +153,10 @@ export default function SettingsPage() {
       const { data } = await api.get('/settings/gateway')
       return data
     },
+    // Evita refazer a busca ao trocar de aba (ex: copiar credenciais de outro site) —
+    // isso ressincronizava o form via `values` e apagava o que ainda não tinha sido salvo.
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
   })
 
   const { control, register, handleSubmit, watch, setValue, reset } = useForm<FormData>({
