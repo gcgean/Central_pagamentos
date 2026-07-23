@@ -163,14 +163,14 @@ export class SettingsController {
         throw new BadRequestException('Client ID/Secret da LivePix não configurados.')
       }
       try {
-        const account = await this.livepix.verifyCredentials(
+        const result = await this.livepix.verifyCredentials(
           cfg.livepix.clientId,
           cfg.livepix.clientSecret,
           cfg.livepix.scope,
         )
         return {
           ok: true,
-          message: `Conexão LivePix OK. Conta: ${account.username ?? account.email ?? 'sem identificação'}.`,
+          message: `Conexão LivePix OK. Token OAuth emitido com sucesso${result.scope ? ` (scopes: ${result.scope})` : ' (sem scope específico)'}.`,
         }
       } catch (err: any) {
         // Converte para 400 para que a mensagem real chegue ao frontend —

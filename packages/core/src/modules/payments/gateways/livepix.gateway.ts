@@ -187,10 +187,19 @@ export class LivePixGateway {
     return err.message ?? 'sem resposta do servidor OAuth'
   }
 
-  async verifyCredentials(clientId: string, clientSecret: string, scope?: string): Promise<{ email?: string; username?: string }> {
+  /**
+   * Valida as credenciais obtendo um token OAuth (client_credentials).
+   * Não usamos GET /v2/account aqui: essa rota é de contexto de usuário e rejeita
+   * tokens de aplicação, mesmo com o scope account:read. A obtenção do token já
+   * prova que client_id/secret (e o método de autenticação) estão corretos.
+   */
+  async verifyCredentials(clientId: string, clientSecret: string, scope?: string): Promise<{ scope?: string }> {
     this.setCredentials(clientId, clientSecret, scope)
-    const account = await this.getAccount()
-    return { email: account.email, username: account.username }
+    // Força a emissão de um token novo, ignorando cache de credenciais anteriores.
+    this.accessToken = undefined
+    this.tokenExpiresAt = 0
+    await this.ensureToken()
+    return { scope: this.scope || undefined }
   }
 
   // ─── Conta ───────────────────────────────────────────────────────────────────

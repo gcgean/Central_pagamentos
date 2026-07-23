@@ -552,12 +552,12 @@ export default function SettingsPage() {
 
                 <Input
                   id="livepix-scope"
-                  label="Scope (opcional)"
-                  placeholder="ex: account:read payments:read subscriptions:create"
+                  label="Scope"
+                  placeholder="payments:read payments:write subscription-plans:read subscription-plans:write subscriptions:read subscriptions:write webhooks"
                   {...register('livepix_scope')}
                 />
                 <p className="text-xs text-gray-400 -mt-2">
-                  Confira os scopes exatos liberados para sua aplicação no painel da LivePix.
+                  Necessário para as operações. Recomendado (fluxo completo): <code className="font-mono">payments:read payments:write subscription-plans:read subscription-plans:write subscriptions:read subscriptions:write webhooks</code>. Sem scope, o token não acessa nenhuma rota.
                 </p>
 
                 {config?.livepix.isConfigured && (
