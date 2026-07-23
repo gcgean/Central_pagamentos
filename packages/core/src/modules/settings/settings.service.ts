@@ -142,7 +142,10 @@ export class SettingsService implements OnModuleInit {
     if (dto.livepix?.clientSecret !== undefined && dto.livepix.clientSecret !== '') {
       await this.repo.set('gateway.livepix.client_secret', dto.livepix.clientSecret)
     }
-    if (dto.livepix?.scope !== undefined && dto.livepix.scope !== '') {
+    // scope pode ser salvo vazio de propósito: sem scope, o servidor OAuth da
+    // LivePix concede os scopes padrão do app. Por isso salvamos mesmo quando '',
+    // ao contrário de client_id/secret (que nunca devem ser zerados por engano).
+    if (dto.livepix?.scope !== undefined) {
       await this.repo.set('gateway.livepix.scope', dto.livepix.scope)
     }
 

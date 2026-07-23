@@ -197,11 +197,17 @@ export default function SettingsPage() {
       if (data.asaas_apiKey) {
         payload.asaas = { apiKey: data.asaas_apiKey }
       }
-      if (data.livepix_clientId || data.livepix_clientSecret || data.livepix_scope) {
+      if (data.activeGateway === 'livepix' || data.livepix_clientId || data.livepix_clientSecret || data.livepix_scope) {
         payload.livepix = {}
         if (data.livepix_clientId) payload.livepix.clientId = data.livepix_clientId
         if (data.livepix_clientSecret) payload.livepix.clientSecret = data.livepix_clientSecret
-        if (data.livepix_scope) payload.livepix.scope = data.livepix_scope
+        // scope não é segredo: quando a LivePix é o gateway em edição, enviamos
+        // sempre o valor atual (inclusive vazio) para permitir limpá-lo.
+        if (data.activeGateway === 'livepix') {
+          payload.livepix.scope = data.livepix_scope ?? ''
+        } else if (data.livepix_scope) {
+          payload.livepix.scope = data.livepix_scope
+        }
       }
       const { data: res } = await api.put('/settings/gateway', payload)
       return res
