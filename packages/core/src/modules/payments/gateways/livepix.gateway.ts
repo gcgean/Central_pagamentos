@@ -131,25 +131,60 @@ export class LivePixGateway {
       )
     }
 
-    const body = new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: this.clientId,
-      client_secret: this.clientSecret,
-    })
+    // A LivePix usa OAuth2 (aparenta ser Ory Hydra). Dependendo de como a aplicação
+    // foi registrada, o token endpoint pode exigir as credenciais via HTTP Basic
+    // Auth (client_secret_basic) OU no corpo (client_secret_post). Tentamos Basic
+    // primeiro e caímos para o corpo caso o servidor rejeite com invalid_client.
+    let lastErr: any
+    for (const method of ['basic', 'post'] as const) {
+      try {
+        const token = await this.requestToken(method)
+        this.accessToken = token.access_token
+        this.tokenExpiresAt = Date.now() + Math.max((token.expires_in ?? 3600) - 60, 30) * 1000
+        this.logger.log(`LivePix OAuth OK (método ${method})`)
+        return this.accessToken as string
+      } catch (err: any) {
+        lastErr = err
+        const status = err.response?.status
+        const oauthError = err.response?.data?.error
+        this.logger.error(
+          `LivePix OAuth error [${method}]: HTTP ${status ?? 'sem resposta'} — ${JSON.stringify(err.response?.data ?? err.message)}`,
+        )
+        // Só faz sentido tentar o outro método quando é falha de autenticação do cliente.
+        const isClientAuthError = status === 401 || oauthError === 'invalid_client'
+        if (!isClientAuthError) break
+      }
+    }
+
+    const detail = this.describeOAuthError(lastErr)
+    throw new BadRequestException(`Falha ao autenticar na LivePix: ${detail}`)
+  }
+
+  private async requestToken(method: 'basic' | 'post'): Promise<{ access_token: string; expires_in?: number }> {
+    const body = new URLSearchParams({ grant_type: 'client_credentials' })
     if (this.scope) body.set('scope', this.scope)
 
-    try {
-      const { data } = await axios.post(OAUTH_TOKEN_URL, body.toString(), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 15_000,
-      })
-      this.accessToken = data.access_token
-      this.tokenExpiresAt = Date.now() + Math.max((data.expires_in ?? 3600) - 60, 30) * 1000
-      return this.accessToken as string
-    } catch (err: any) {
-      this.logger.error(`LivePix OAuth error: ${err.response?.status}`, err.response?.data)
-      throw new BadGatewayException('Falha ao autenticar no gateway LivePix')
+    const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' }
+    if (method === 'basic') {
+      const credentials = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64')
+      headers.Authorization = `Basic ${credentials}`
+    } else {
+      body.set('client_id', this.clientId)
+      body.set('client_secret', this.clientSecret)
     }
+
+    const { data } = await axios.post(OAUTH_TOKEN_URL, body.toString(), { headers, timeout: 15_000 })
+    return data
+  }
+
+  private describeOAuthError(err: any): string {
+    if (!err) return 'erro desconhecido'
+    const status = err.response?.status
+    const data = err.response?.data
+    if (data?.error_description) return `${data.error ?? status}: ${data.error_description}`
+    if (data?.error) return `${status ?? ''} ${data.error}`.trim()
+    if (status) return `HTTP ${status}`
+    return err.message ?? 'sem resposta do servidor OAuth'
   }
 
   async verifyCredentials(clientId: string, clientSecret: string, scope?: string): Promise<{ email?: string; username?: string }> {

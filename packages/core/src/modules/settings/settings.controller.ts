@@ -162,14 +162,20 @@ export class SettingsController {
       if (!cfg.livepix.isConfigured) {
         throw new BadRequestException('Client ID/Secret da LivePix não configurados.')
       }
-      const account = await this.livepix.verifyCredentials(
-        cfg.livepix.clientId,
-        cfg.livepix.clientSecret,
-        cfg.livepix.scope,
-      )
-      return {
-        ok: true,
-        message: `Conexão LivePix OK. Conta: ${account.username ?? account.email ?? 'sem identificação'}.`,
+      try {
+        const account = await this.livepix.verifyCredentials(
+          cfg.livepix.clientId,
+          cfg.livepix.clientSecret,
+          cfg.livepix.scope,
+        )
+        return {
+          ok: true,
+          message: `Conexão LivePix OK. Conta: ${account.username ?? account.email ?? 'sem identificação'}.`,
+        }
+      } catch (err: any) {
+        // Converte para 400 para que a mensagem real chegue ao frontend —
+        // um 502 seria interceptado pelo reverse proxy e substituído por HTML.
+        throw new BadRequestException(err?.message ?? 'Falha ao testar conexão com a LivePix')
       }
     }
 
@@ -193,15 +199,19 @@ export class SettingsController {
     }
 
     this.livepix.setCredentials(cfg.livepix.clientId, cfg.livepix.clientSecret, cfg.livepix.scope)
-    const result = await this.livepix.ensureWebhook(webhookUrl)
-
-    return {
-      ok: true,
-      webhookUrl,
-      webhookId: result.id,
-      message: result.alreadyRegistered
-        ? 'Webhook já estava registrado na LivePix.'
-        : 'Webhook registrado com sucesso na LivePix.',
+    try {
+      const result = await this.livepix.ensureWebhook(webhookUrl)
+      return {
+        ok: true,
+        webhookUrl,
+        webhookId: result.id,
+        message: result.alreadyRegistered
+          ? 'Webhook já estava registrado na LivePix.'
+          : 'Webhook registrado com sucesso na LivePix.',
+      }
+    } catch (err: any) {
+      // 400 em vez de 502 para a mensagem real chegar ao frontend (proxy-safe).
+      throw new BadRequestException(err?.message ?? 'Falha ao registrar webhook na LivePix')
     }
   }
 }
