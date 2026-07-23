@@ -1,12 +1,14 @@
 import {
   Controller, Get, Put, Post, Body, UseGuards, BadRequestException,
 } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { IsOptional, IsString, IsIn, ValidateNested } from 'class-validator'
 import { Type } from 'class-transformer'
 import { ApiProperty } from '@nestjs/swagger'
 import { AdminJwtGuard } from '../../shared/guards/admin-jwt.guard'
 import { SettingsService, ActiveGateway } from './settings.service'
+import { LivePixGateway } from '../payments/gateways/livepix.gateway'
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
@@ -34,10 +36,27 @@ class AsaasCredentialsDto {
   apiKey?: string
 }
 
-class UpdateGatewayDto {
-  @ApiProperty({ enum: ['mercadopago', 'asaas'], required: false })
+class LivePixCredentialsDto {
+  @ApiProperty({ required: false })
   @IsOptional()
-  @IsIn(['mercadopago', 'asaas'])
+  @IsString()
+  clientId?: string
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  clientSecret?: string
+
+  @ApiProperty({ required: false, description: 'Scopes da aplicação OAuth2, conforme configurado no painel da LivePix' })
+  @IsOptional()
+  @IsString()
+  scope?: string
+}
+
+class UpdateGatewayDto {
+  @ApiProperty({ enum: ['mercadopago', 'asaas', 'livepix'], required: false })
+  @IsOptional()
+  @IsIn(['mercadopago', 'asaas', 'livepix'])
   activeGateway?: ActiveGateway
 
   @ApiProperty({ type: MercadoPagoCredentialsDto, required: false })
@@ -51,12 +70,28 @@ class UpdateGatewayDto {
   @ValidateNested()
   @Type(() => AsaasCredentialsDto)
   asaas?: AsaasCredentialsDto
+
+  @ApiProperty({ type: LivePixCredentialsDto, required: false })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LivePixCredentialsDto)
+  livepix?: LivePixCredentialsDto
 }
 
 class TestGatewayDto {
-  @ApiProperty({ enum: ['mercadopago', 'asaas'] })
-  @IsIn(['mercadopago', 'asaas'])
+  @ApiProperty({ enum: ['mercadopago', 'asaas', 'livepix'] })
+  @IsIn(['mercadopago', 'asaas', 'livepix'])
   gateway: ActiveGateway
+}
+
+class RegisterLivePixWebhookDto {
+  @ApiProperty({
+    required: false,
+    description: 'URL pública do webhook. Se omitida, usa APP_URL + /api/v1/webhooks/gateway/livepix.',
+  })
+  @IsOptional()
+  @IsString()
+  url?: string
 }
 
 // ── Controller ────────────────────────────────────────────────────────────────
@@ -67,7 +102,11 @@ class TestGatewayDto {
 @Controller({ path: 'settings', version: '1' })
 export class SettingsController {
 
-  constructor(private readonly settings: SettingsService) {}
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly livepix: LivePixGateway,
+    private readonly config: ConfigService,
+  ) {}
 
   @Get('gateway')
   @ApiOperation({ summary: 'Retorna configuração do gateway de pagamento (mascarada)' })
@@ -119,6 +158,50 @@ export class SettingsController {
       return { ok: true, message: 'API Key do Asaas salva com sucesso.' }
     }
 
+    if (dto.gateway === 'livepix') {
+      if (!cfg.livepix.isConfigured) {
+        throw new BadRequestException('Client ID/Secret da LivePix não configurados.')
+      }
+      const account = await this.livepix.verifyCredentials(
+        cfg.livepix.clientId,
+        cfg.livepix.clientSecret,
+        cfg.livepix.scope,
+      )
+      return {
+        ok: true,
+        message: `Conexão LivePix OK. Conta: ${account.username ?? account.email ?? 'sem identificação'}.`,
+      }
+    }
+
     throw new BadRequestException('Gateway desconhecido.')
+  }
+
+  @Post('gateway/livepix/webhook')
+  @ApiOperation({ summary: 'Registra (ou confirma) a URL de webhook da LivePix' })
+  async registerLivePixWebhook(@Body() dto: RegisterLivePixWebhookDto) {
+    const cfg = await this.settings.getGatewayConfig()
+    if (!cfg.livepix.isConfigured) {
+      throw new BadRequestException('Client ID/Secret da LivePix não configurados.')
+    }
+
+    const appUrl = (this.config.get<string>('app.url', '') || this.config.get<string>('APP_URL', '') || '').replace(/\/$/, '')
+    const webhookUrl = dto.url || `${appUrl}/api/v1/webhooks/gateway/livepix`
+    if (!/^https?:\/\//.test(webhookUrl)) {
+      throw new BadRequestException(
+        'Informe uma URL de webhook válida (ou configure APP_URL no ambiente).',
+      )
+    }
+
+    this.livepix.setCredentials(cfg.livepix.clientId, cfg.livepix.clientSecret, cfg.livepix.scope)
+    const result = await this.livepix.ensureWebhook(webhookUrl)
+
+    return {
+      ok: true,
+      webhookUrl,
+      webhookId: result.id,
+      message: result.alreadyRegistered
+        ? 'Webhook já estava registrado na LivePix.'
+        : 'Webhook registrado com sucesso na LivePix.',
+    }
   }
 }

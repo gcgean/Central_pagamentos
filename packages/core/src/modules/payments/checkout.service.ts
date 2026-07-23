@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException, UnprocessableEntityException }
 import { ConfigService } from '@nestjs/config'
 import { AsaasGateway } from './gateways/asaas.gateway'
 import { MercadoPagoGateway } from './gateways/mercadopago.gateway'
+import { LivePixGateway } from './gateways/livepix.gateway'
 import { PaymentsRepository } from './payments.repository'
 import { CustomersService } from '../customers/customers.service'
 import { PlansService } from '../plans/plans.service'
@@ -33,6 +34,7 @@ export class CheckoutService {
     private readonly settingsService: SettingsService,
     private readonly asaas: AsaasGateway,
     private readonly mp: MercadoPagoGateway,
+    private readonly livepix: LivePixGateway,
     private readonly repo: PaymentsRepository,
     private readonly customers: CustomersService,
     private readonly plans: PlansService,
@@ -48,17 +50,20 @@ export class CheckoutService {
       throw new BadRequestException('Plano não está disponível para contratação')
     }
 
-    // Resolve gateway ativo (DB > env)
+    // Resolve gateway: produto (override por produto) > gateway ativo global (DB > env)
     const gwConfig = await this.settingsService.getGatewayConfig()
-    const activeGateway = gwConfig.activeGateway
+    const activeGateway = product.gatewayName ?? gwConfig.activeGateway
 
-    this.logger.log(`Checkout via gateway: ${activeGateway}`)
+    this.logger.log(`Checkout via gateway: ${activeGateway}${product.gatewayName ? ' (override do produto)' : ''}`)
 
     if (activeGateway === 'mercadopago') {
       return this.createMercadoPagoCheckout(params, plan, product, customer, gwConfig)
     }
 
-    // Fallback: Asaas
+    if (activeGateway === 'livepix') {
+      return this.createLivePixCheckout(params, plan, product, customer, gwConfig)
+    }
+
     return this.createAsaasCheckout(params, plan, product, customer)
   }
 
@@ -179,6 +184,73 @@ export class CheckoutService {
       boletoUrl:        null,
       amount:           plan.amount,
       currency:         plan.currency ?? 'BRL',
+      dueDate,
+    }
+  }
+
+  // ── LivePix ──────────────────────────────────────────────────────────────────
+  //
+  // A LivePix só oferece checkout hospedado (redirect para checkout.livepix.gg):
+  // não há emissão de PIX Copia-e-Cola/QR Code direto, nem coleta de CPF/CNPJ
+  // na criação da cobrança. O `billingType` recebido é usado apenas para rotular
+  // a cobrança localmente — quem decide o método de pagamento é o pagador, na
+  // página de checkout da LivePix.
+
+  private async createLivePixCheckout(
+    params: CreateCheckoutParams,
+    plan: any,
+    product: any,
+    customer: any,
+    gwConfig: Awaited<ReturnType<SettingsService['getGatewayConfig']>>,
+  ) {
+    if (!gwConfig.livepix.isConfigured) {
+      throw new BadRequestException(
+        'Credenciais da LivePix não configuradas. Acesse Configurações → Gateway.',
+      )
+    }
+
+    this.livepix.setCredentials(gwConfig.livepix.clientId, gwConfig.livepix.clientSecret, gwConfig.livepix.scope)
+
+    const dueDate = dayjs().add(3, 'day').format('YYYY-MM-DD')
+    const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
+    const redirectUrl = `${appUrl}/${params.originType === 'order' ? 'orders' : 'subscriptions'}/${params.originId}`
+
+    this.logger.log(`Iniciando checkout LivePix para ${params.originType}:${params.originId}`)
+
+    const checkout = await this.livepix.createPayment({
+      amount: plan.amount,
+      currency: plan.currency ?? 'BRL',
+      redirectUrl,
+    })
+
+    const invoice = await this.repo.findInvoiceByOrigin(params.originType, params.originId)
+    const localCharge = await this.repo.createCharge({
+      invoiceId: invoice.id,
+      customerId: params.customerId,
+      amount: plan.amount,
+      currency: plan.currency ?? 'BRL',
+      paymentMethod: params.billingType.toLowerCase() as any,
+      gatewayName: 'livepix',
+      externalChargeId: checkout.reference,
+      checkoutUrl: checkout.redirectUrl,
+      installmentCount: 1,
+      attemptNumber: 1,
+      maxAttempts: 3,
+    })
+
+    this.logger.log(`Checkout LivePix criado: charge ${localCharge.id} → LivePix ${checkout.reference}`)
+
+    return {
+      chargeId: localCharge.id,
+      externalChargeId: checkout.reference,
+      status: localCharge.status,
+      checkoutUrl: checkout.redirectUrl,
+      pixCode: null,
+      pixQrCode: null,
+      pixPayload: null,
+      boletoUrl: null,
+      amount: plan.amount,
+      currency: plan.currency ?? 'BRL',
       dueDate,
     }
   }
@@ -339,7 +411,7 @@ export class CheckoutService {
     const product  = await this.products.findById(params.productId)
 
     const gwConfig      = await this.settingsService.getGatewayConfig()
-    const activeGateway = gwConfig.activeGateway
+    const activeGateway = product.gatewayName ?? gwConfig.activeGateway
 
     if (activeGateway === 'mercadopago') {
       if (!gwConfig.mercadopago.isConfigured) {
@@ -364,7 +436,41 @@ export class CheckoutService {
       }
     }
 
-    // Asaas
+    if (activeGateway === 'livepix') {
+      if (!gwConfig.livepix.isConfigured) {
+        throw new BadRequestException('Credenciais da LivePix não configuradas.')
+      }
+      this.livepix.setCredentials(gwConfig.livepix.clientId, gwConfig.livepix.clientSecret, gwConfig.livepix.scope)
+
+      const recurrence = LivePixGateway.intervalToRecurrence(plan.intervalUnit, plan.intervalCount)
+      const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
+
+      const plan_ = await this.livepix.createOrFindPlan({
+        slug: `${product.code}-${plan.code}`.toLowerCase(),
+        name: `${product.name} — ${plan.name}`,
+        amount: plan.amount,
+        currency: plan.currency ?? 'BRL',
+      })
+
+      const sub = await this.livepix.createSubscription({
+        planId: plan_.id,
+        recurrence,
+        subscriber: { email: customer.email },
+        redirectUrl: `${appUrl}/subscriptions/${params.subscriptionId}`,
+      })
+
+      return {
+        externalSubscriptionId: sub.reference,
+        checkoutUrl: sub.redirectUrl,
+        cycle: recurrence,
+        nextDueDate: null,
+      }
+    }
+
+    if (activeGateway !== 'asaas') {
+      throw new BadRequestException(`Gateway "${activeGateway}" não suportado para assinaturas recorrentes.`)
+    }
+
     const asaasCustomer = await this.asaas.createOrFindCustomer({
       name:     customer.legalName,
       cpfCnpj: customer.documentClean,

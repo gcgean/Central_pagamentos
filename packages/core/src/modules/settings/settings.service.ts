@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { SettingsRepository } from './settings.repository'
 
-export type ActiveGateway = 'mercadopago' | 'asaas'
+export type ActiveGateway = 'mercadopago' | 'asaas' | 'livepix'
 
 export interface GatewayConfig {
   activeGateway: ActiveGateway
@@ -16,6 +16,12 @@ export interface GatewayConfig {
     apiKey: string
     isConfigured: boolean
   }
+  livepix: {
+    clientId: string
+    clientSecret: string
+    scope: string
+    isConfigured: boolean
+  }
 }
 
 export interface UpdateGatewayConfigDto {
@@ -27,6 +33,11 @@ export interface UpdateGatewayConfigDto {
   }
   asaas?: {
     apiKey?: string
+  }
+  livepix?: {
+    clientId?: string
+    clientSecret?: string
+    scope?: string
   }
 }
 
@@ -52,8 +63,13 @@ export class SettingsService implements OnModuleInit {
     const mpSecret  = settings['gateway.mercadopago.webhook_secret'] ?? this.config.get<string>('MERCADOPAGO_WEBHOOK_SECRET', '')
     const asaasKey  = settings['gateway.asaas.api_key']             ?? this.config.get<string>('ASAAS_API_KEY', '')
 
+    const lpClientId     = settings['gateway.livepix.client_id']     ?? this.config.get<string>('LIVEPIX_CLIENT_ID', '')
+    const lpClientSecret = settings['gateway.livepix.client_secret'] ?? this.config.get<string>('LIVEPIX_CLIENT_SECRET', '')
+    const lpScope         = settings['gateway.livepix.scope']         ?? this.config.get<string>('LIVEPIX_SCOPE', '')
+
     const dbActive = settings['gateway.active']
-    const activeGateway: ActiveGateway = dbActive === 'mercadopago' ? 'mercadopago' : 'asaas'
+    const activeGateway: ActiveGateway =
+      dbActive === 'mercadopago' || dbActive === 'livepix' ? dbActive : 'asaas'
 
     return {
       activeGateway,
@@ -66,6 +82,12 @@ export class SettingsService implements OnModuleInit {
       asaas: {
         apiKey:       asaasKey,
         isConfigured: !!asaasKey,
+      },
+      livepix: {
+        clientId:     lpClientId,
+        clientSecret: lpClientSecret,
+        scope:        lpScope,
+        isConfigured: !!lpClientId && !!lpClientSecret,
       },
     }
   }
@@ -84,6 +106,11 @@ export class SettingsService implements OnModuleInit {
       asaas: {
         ...cfg.asaas,
         apiKey: cfg.asaas.apiKey ? this.mask(cfg.asaas.apiKey) : '',
+      },
+      livepix: {
+        ...cfg.livepix,
+        clientId:     cfg.livepix.clientId,
+        clientSecret: cfg.livepix.clientSecret ? this.mask(cfg.livepix.clientSecret) : '',
       },
     }
   }
@@ -107,6 +134,16 @@ export class SettingsService implements OnModuleInit {
 
     if (dto.asaas?.apiKey !== undefined && dto.asaas.apiKey !== '') {
       await this.repo.set('gateway.asaas.api_key', dto.asaas.apiKey)
+    }
+
+    if (dto.livepix?.clientId !== undefined && dto.livepix.clientId !== '') {
+      await this.repo.set('gateway.livepix.client_id', dto.livepix.clientId)
+    }
+    if (dto.livepix?.clientSecret !== undefined && dto.livepix.clientSecret !== '') {
+      await this.repo.set('gateway.livepix.client_secret', dto.livepix.clientSecret)
+    }
+    if (dto.livepix?.scope !== undefined && dto.livepix.scope !== '') {
+      await this.repo.set('gateway.livepix.scope', dto.livepix.scope)
     }
 
     return this.getGatewayConfigMasked()

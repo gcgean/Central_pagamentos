@@ -160,6 +160,7 @@ export class WebhookProcessorService extends WorkerHost {
 import { Controller, Post, Param, Req, Headers, RawBodyRequest } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { MercadoPagoGateway } from '../payments/gateways/mercadopago.gateway'
+import { LivePixGateway } from '../payments/gateways/livepix.gateway'
 import { SettingsService } from '../settings/settings.service'
 
 @Controller({ path: 'webhooks', version: '1' })
@@ -170,6 +171,7 @@ export class WebhooksController {
     private readonly config: ConfigService,
     private readonly settings: SettingsService,
     private readonly mp: MercadoPagoGateway,
+    private readonly livepix: LivePixGateway,
   ) {}
 
   // Ponto de entrada para qualquer gateway: /api/v1/webhooks/gateway/asaas
@@ -210,12 +212,34 @@ export class WebhooksController {
       provider === 'mercadopago'
         ? (body.action ?? body.type ?? 'unknown')
         : (body.event ?? body.type ?? 'unknown')
-    const externalId =
+    let externalId =
       provider === 'mercadopago'
         ? (body.data?.id ?? body.id ?? body.paymentId)
         : (body.id ?? body.data?.object?.id ?? body.paymentId)
 
     let payload = body
+
+    // LivePix envia apenas {userId, clientId, event, resource:{id, reference, type}}.
+    // Detalhes completos exigem uma chamada à API (não há assinatura/HMAC documentada).
+    if (provider === 'livepix') {
+      const resource = (body?.resource ?? {}) as { id?: string; reference?: string; type?: string }
+      const resourceId = String(resource.id ?? resource.reference ?? '')
+      const lpEvent = String(body?.event ?? '')
+
+      if (resource.type === 'subscription') {
+        eventType = lpEvent === 'cancelled' ? 'subscription.canceled' : 'subscription.new'
+        payload = { ...body, externalSubscriptionId: resourceId }
+      } else if (resource.type === 'payment' && resourceId) {
+        const cfg = await this.settings.getGatewayConfig()
+        this.livepix.setCredentials(cfg.livepix.clientId, cfg.livepix.clientSecret, cfg.livepix.scope)
+        const payment = await this.livepix.getPayment(resourceId)
+        payload = { ...body, payment, chargeId: String(payment.reference ?? payment.id ?? resourceId) }
+        eventType = 'payment.approved'
+      }
+
+      externalId = resourceId
+    }
+
     if (provider === 'mercadopago' && ['payment.updated', 'payment.created'].includes(eventType) && externalId) {
       const cfg = await this.settings.getGatewayConfig()
       this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)

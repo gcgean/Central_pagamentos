@@ -1,6 +1,7 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common'
 import { AsaasGateway } from './gateways/asaas.gateway'
 import { MercadoPagoGateway } from './gateways/mercadopago.gateway'
+import { LivePixGateway } from './gateways/livepix.gateway'
 import { PaymentsRepository } from './payments.repository'
 import { SettingsService } from '../settings/settings.service'
 import { InvoicesService } from '../invoices/invoices.service'
@@ -13,6 +14,7 @@ export class PaymentsService {
   constructor(
     private readonly asaas: AsaasGateway,
     private readonly mp: MercadoPagoGateway,
+    private readonly livepix: LivePixGateway,
     private readonly settings: SettingsService,
     private readonly repo: PaymentsRepository,
     private readonly invoices: InvoicesService,
@@ -27,6 +29,10 @@ export class PaymentsService {
       const cfg = await this.settings.getGatewayConfig()
       this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
       await this.mp.refundPayment(externalChargeId, value)
+    } else if (gateway === 'livepix') {
+      throw new BadRequestException(
+        'A API da LivePix não disponibiliza estorno programático. O reembolso precisa ser feito manualmente pelo painel da LivePix.',
+      )
     } else {
       await this.asaas.refundPayment(externalChargeId, value)
     }
@@ -42,6 +48,10 @@ export class PaymentsService {
       const cfg = await this.settings.getGatewayConfig()
       this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
       await this.mp.cancelCharge(externalChargeId)
+    } else if (gateway === 'livepix') {
+      throw new BadRequestException(
+        'A API da LivePix não disponibiliza cancelamento programático de cobrança.',
+      )
     } else {
       await this.asaas.cancelCharge(externalChargeId)
     }
@@ -57,6 +67,11 @@ export class PaymentsService {
       const cfg = await this.settings.getGatewayConfig()
       this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
       return this.mp.getCharge(externalChargeId)
+    }
+    if (gateway === 'livepix') {
+      const cfg = await this.settings.getGatewayConfig()
+      this.livepix.setCredentials(cfg.livepix.clientId, cfg.livepix.clientSecret, cfg.livepix.scope)
+      return this.livepix.getPayment(externalChargeId)
     }
     return this.asaas.getCharge(externalChargeId)
   }

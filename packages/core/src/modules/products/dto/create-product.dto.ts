@@ -13,6 +13,12 @@ export enum ProductStatus {
   DRAFT    = 'draft',
 }
 
+export enum ProductGateway {
+  ASAAS       = 'asaas',
+  MERCADOPAGO = 'mercadopago',
+  LIVEPIX     = 'livepix',
+}
+
 export class CreateProductDto {
   @ApiProperty({ example: 'CRM_PRO', description: 'Código único do produto (slug)' })
   @IsString()
@@ -57,4 +63,12 @@ export class CreateProductDto {
   @IsInt()
   @Min(0)
   trialDays?: number
+
+  @ApiPropertyOptional({
+    enum: ProductGateway,
+    description: 'Gateway de pagamento específico deste produto. Se omitido, usa o gateway ativo global.',
+  })
+  @IsOptional()
+  @IsEnum(ProductGateway)
+  gatewayName?: ProductGateway
 }
