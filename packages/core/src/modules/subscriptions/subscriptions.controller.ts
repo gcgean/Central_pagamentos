@@ -46,6 +46,10 @@ class CreateCheckoutDto {
   @ApiPropertyOptional({ description: 'CPF/CNPJ do titular (11 ou 14 dígitos). Obrigatório para PIX quando cliente não possui documento válido.' })
   @IsOptional() @IsString()
   payerDocument?: string
+
+  @ApiPropertyOptional({ description: 'URL de retorno pós-pagamento para gateways de checkout hospedado (ex: LivePix). O cliente é redirecionado para cá após pagar.' })
+  @IsOptional() @IsString()
+  returnUrl?: string
 }
 
 class CreateOrderDto {

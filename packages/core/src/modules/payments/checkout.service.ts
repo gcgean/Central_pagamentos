@@ -22,6 +22,10 @@ export interface CreateCheckoutParams {
   remoteIp?: string
   payerName?: string
   payerDocument?: string
+  // URL para onde o cliente é redirecionado após concluir o pagamento em gateways
+  // de checkout hospedado (ex: LivePix). Informada pelo sistema satélite que
+  // iniciou o checkout. Se ausente, cai no endereço do próprio Hub.
+  returnUrl?: string
 }
 
 @Injectable()
@@ -213,9 +217,14 @@ export class CheckoutService {
 
     const dueDate = dayjs().add(3, 'day').format('YYYY-MM-DD')
     const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
-    const redirectUrl = `${appUrl}/${params.originType === 'order' ? 'orders' : 'subscriptions'}/${params.originId}`
+    // Redirect pós-pagamento: prioriza a URL informada pelo sistema satélite
+    // (ex: NoSigilo). Só aceita http(s); senão cai no endereço do próprio Hub.
+    const fallbackReturnUrl = `${appUrl}/${params.originType === 'order' ? 'orders' : 'subscriptions'}/${params.originId}`
+    const redirectUrl = params.returnUrl && /^https?:\/\//i.test(params.returnUrl.trim())
+      ? params.returnUrl.trim()
+      : fallbackReturnUrl
 
-    this.logger.log(`Iniciando checkout LivePix para ${params.originType}:${params.originId}`)
+    this.logger.log(`Iniciando checkout LivePix para ${params.originType}:${params.originId} (redirect: ${redirectUrl})`)
 
     const checkout = await this.livepix.createPayment({
       amount: plan.amount,
