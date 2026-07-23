@@ -70,6 +70,9 @@ export class LivePixGateway {
   private scope: string
   private accessToken?: string
   private tokenExpiresAt = 0
+  // Memoriza o método de autenticação que funcionou, para não fazer a tentativa
+  // dupla (basic + post) a cada emissão de token — reduz chamadas ao OAuth.
+  private preferredAuthMethod?: 'basic' | 'post'
 
   constructor(private readonly config: ConfigService) {
     this.clientId = config.get<string>('LIVEPIX_CLIENT_ID', '')
@@ -110,9 +113,17 @@ export class LivePixGateway {
     if (!clientId || !clientSecret) {
       throw new Error('Credenciais da LivePix não configuradas')
     }
-    if (this.clientId !== clientId || this.clientSecret !== clientSecret) {
+    const credentialsChanged = this.clientId !== clientId || this.clientSecret !== clientSecret
+    const scopeChanged = scope !== undefined && scope !== this.scope
+    // O token em cache carrega o scope com que foi emitido — se o scope mudar, o
+    // token antigo não serve para as novas operações e precisa ser reemitido.
+    if (credentialsChanged || scopeChanged) {
       this.accessToken = undefined
       this.tokenExpiresAt = 0
+    }
+    // App diferente (novo clientId) pode usar outro método de autenticação.
+    if (this.clientId !== clientId) {
+      this.preferredAuthMethod = undefined
     }
     this.clientId = clientId
     this.clientSecret = clientSecret
@@ -133,14 +144,21 @@ export class LivePixGateway {
 
     // A LivePix usa OAuth2 (aparenta ser Ory Hydra). Dependendo de como a aplicação
     // foi registrada, o token endpoint pode exigir as credenciais via HTTP Basic
-    // Auth (client_secret_basic) OU no corpo (client_secret_post). Tentamos Basic
-    // primeiro e caímos para o corpo caso o servidor rejeite com invalid_client.
+    // Auth (client_secret_basic) OU no corpo (client_secret_post). Na primeira vez
+    // tentamos Basic e caímos para o corpo se der invalid_client; depois disso,
+    // reutilizamos o método que funcionou para evitar requisição dupla ao OAuth
+    // (a LivePix penaliza — e pode encerrar a conta por — emissão abusiva de tokens).
+    const methods: ('basic' | 'post')[] = this.preferredAuthMethod
+      ? [this.preferredAuthMethod]
+      : ['basic', 'post']
+
     let lastErr: any
-    for (const method of ['basic', 'post'] as const) {
+    for (const method of methods) {
       try {
         const token = await this.requestToken(method)
         this.accessToken = token.access_token
         this.tokenExpiresAt = Date.now() + Math.max((token.expires_in ?? 3600) - 60, 30) * 1000
+        this.preferredAuthMethod = method
         this.logger.log(`LivePix OAuth OK (método ${method})`)
         return this.accessToken as string
       } catch (err: any) {
@@ -195,9 +213,9 @@ export class LivePixGateway {
    */
   async verifyCredentials(clientId: string, clientSecret: string, scope?: string): Promise<{ scope?: string }> {
     this.setCredentials(clientId, clientSecret, scope)
-    // Força a emissão de um token novo, ignorando cache de credenciais anteriores.
-    this.accessToken = undefined
-    this.tokenExpiresAt = 0
+    // Não forçamos novo token: setCredentials já invalidou o cache se algo mudou.
+    // Reaproveitar um token válido é prova suficiente de que as credenciais
+    // funcionam — e evita emitir tokens à toa a cada clique em "Testar Conexão".
     await this.ensureToken()
     return { scope: this.scope || undefined }
   }
