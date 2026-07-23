@@ -166,6 +166,8 @@ import { SettingsService } from '../settings/settings.service'
 @Controller({ path: 'webhooks', version: '1' })
 export class WebhooksController {
 
+  private readonly logger = new Logger(WebhooksController.name)
+
   constructor(
     private readonly ingest: WebhooksIngestService,
     private readonly config: ConfigService,
@@ -219,25 +221,31 @@ export class WebhooksController {
 
     let payload = body
 
-    // LivePix envia apenas {userId, clientId, event, resource:{id, reference, type}}.
-    // Detalhes completos exigem uma chamada à API (não há assinatura/HMAC documentada).
+    // LivePix envia {userId, clientId, event, resource:{id, reference, type}}.
+    // NÃO chamamos GET /v2/payments aqui: o evento já é a confirmação do pagamento,
+    // aquela rota rejeita o id do recurso, e é uma chamada rate-limited a menos.
+    // Ligamos à cobrança pela reference (que casa com o externalChargeId gravado no
+    // checkout); o id do recurso fica como candidato de fallback na busca.
     if (provider === 'livepix') {
+      this.logger.log(`LivePix webhook payload: ${JSON.stringify(body)}`)
       const resource = (body?.resource ?? {}) as { id?: string; reference?: string; type?: string }
-      const resourceId = String(resource.id ?? resource.reference ?? '')
+      const reference = String(resource.reference ?? '')
+      const resourceId = String(resource.id ?? '')
       const lpEvent = String(body?.event ?? '')
 
       if (resource.type === 'subscription') {
         eventType = lpEvent === 'cancelled' ? 'subscription.canceled' : 'subscription.new'
-        payload = { ...body, externalSubscriptionId: resourceId }
-      } else if (resource.type === 'payment' && resourceId) {
-        const cfg = await this.settings.getGatewayConfig()
-        this.livepix.setCredentials(cfg.livepix.clientId, cfg.livepix.clientSecret, cfg.livepix.scope)
-        const payment = await this.livepix.getPayment(resourceId)
-        payload = { ...body, payment, chargeId: String(payment.reference ?? payment.id ?? resourceId) }
+        payload = { ...body, externalSubscriptionId: reference || resourceId }
+      } else if (resource.type === 'payment') {
         eventType = 'payment.approved'
+        payload = {
+          ...body,
+          chargeId: reference || resourceId,
+          chargeIdCandidates: [reference, resourceId].filter(Boolean),
+        }
       }
 
-      externalId = resourceId
+      externalId = resourceId || reference
     }
 
     if (provider === 'mercadopago' && ['payment.updated', 'payment.created'].includes(eventType) && externalId) {

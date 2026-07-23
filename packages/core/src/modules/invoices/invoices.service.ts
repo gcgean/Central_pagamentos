@@ -256,6 +256,16 @@ export class InvoicesService {
       if (byExternal) return byExternal
     }
 
+    // Candidatos adicionais de external_charge_id (ex: LivePix envia reference + id
+    // do pagamento no webhook; um deles casa com o externalChargeId da cobrança).
+    const candidates: string[] = Array.isArray(payload?.chargeIdCandidates) ? payload.chargeIdCandidates : []
+    for (const candidate of candidates) {
+      if (candidate && candidate !== externalChargeId) {
+        const byCandidate = await this.repo.findLatestChargeByExternalId(candidate)
+        if (byCandidate) return byCandidate
+      }
+    }
+
     const externalReference =
       payload?.externalReference ??
       payload?.external_reference ??
