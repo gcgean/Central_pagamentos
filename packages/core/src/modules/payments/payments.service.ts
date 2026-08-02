@@ -68,6 +68,61 @@ export class PaymentsService {
     this.logger.log(`Cobrança cancelada: ${externalChargeId}`)
   }
 
+  /**
+   * Cancela a assinatura recorrente nativa do gateway (ex: Stripe Subscriptions),
+   * parando as cobranças automáticas futuras no cartão salvo. Chamado pelo
+   * SubscriptionsService.cancel() antes de marcar como cancelado localmente —
+   * sem isso, cancelar no Hub não impede o gateway de continuar cobrando.
+   *
+   * Sem gatewayName/externalSubscriptionId = nada a cancelar no gateway (ex:
+   * assinatura cobrada manualmente ciclo a ciclo, sem assinatura nativa).
+   */
+  async cancelRecurringSubscription(
+    gatewayName: string | null | undefined,
+    externalSubscriptionId: string | null | undefined,
+  ): Promise<void> {
+    if (!gatewayName || !externalSubscriptionId) return
+
+    if (gatewayName === 'stripe') {
+      const cfg = await this.settings.getGatewayConfig()
+      this.stripe.setCredentials(cfg.stripe.secretKey, cfg.stripe.webhookSecret)
+      try {
+        await this.stripe.cancelSubscription(externalSubscriptionId)
+      } catch (err: any) {
+        const msg = String(err?.message ?? '').toLowerCase()
+        // Idempotente: se já foi cancelada (ex: pelo próprio webhook
+        // customer.subscription.deleted) ou não existe mais, não é erro.
+        if (msg.includes('already') || msg.includes('no such subscription') || msg.includes('canceled')) {
+          this.logger.warn(`Assinatura Stripe ${externalSubscriptionId} já cancelada/inexistente — ignorado.`)
+          return
+        }
+        throw err
+      }
+      this.logger.log(`Assinatura recorrente cancelada no gateway: stripe ${externalSubscriptionId}`)
+      return
+    }
+
+    if (gatewayName === 'mercadopago') {
+      const cfg = await this.settings.getGatewayConfig()
+      this.mp.setCredentials(cfg.mercadopago.accessToken, cfg.mercadopago.webhookSecret)
+      await this.mp.cancelSubscription(externalSubscriptionId)
+      this.logger.log(`Assinatura recorrente cancelada no gateway: mercadopago ${externalSubscriptionId}`)
+      return
+    }
+
+    if (gatewayName === 'asaas') {
+      await this.asaas.cancelSubscription(externalSubscriptionId)
+      this.logger.log(`Assinatura recorrente cancelada no gateway: asaas ${externalSubscriptionId}`)
+      return
+    }
+
+    if (gatewayName === 'livepix') {
+      throw new BadRequestException(
+        'A API da LivePix não disponibiliza cancelamento programático de assinatura. Cancele manualmente pelo painel da LivePix — os dados locais foram atualizados, mas a cobrança recorrente lá pode continuar até você cancelar por lá.',
+      )
+    }
+  }
+
   async getCharge(externalChargeId: string) {
     const charge = await this.repo.findLatestChargeByExternalId(externalChargeId)
     if (!charge) throw new NotFoundException('Cobrança não encontrada')

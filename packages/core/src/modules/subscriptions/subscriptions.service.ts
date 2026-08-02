@@ -11,6 +11,7 @@ import { Subscription } from './entities/subscription.entity'
 import dayjs from 'dayjs'
 import { InternalEventsService } from '../webhooks/internal-events.service'
 import { AccessCacheService } from '../../shared/cache/access-cache.service'
+import { PaymentsService } from '../payments/payments.service'
 
 @Injectable()
 export class SubscriptionsService {
@@ -25,6 +26,7 @@ export class SubscriptionsService {
     private readonly audit: AuditService,
     private readonly internalEvents: InternalEventsService,
     private readonly accessCache: AccessCacheService,
+    private readonly payments: PaymentsService,
   ) {}
 
   async create(dto: CreateSubscriptionDto, actorId?: string): Promise<Subscription> {
@@ -119,10 +121,18 @@ export class SubscriptionsService {
     reason: string,
     immediate = false,
     actorId?: string,
+    skipGatewayCancel = false,
   ): Promise<Subscription> {
     const sub = await this.findById(subscriptionId)
 
     if (sub.status === 'canceled') return sub
+
+    // Cancela a cobrança recorrente no gateway (ex: Stripe Subscriptions) ANTES
+    // de marcar como cancelado localmente — senão o Hub mostra "cancelado" mas o
+    // cartão do cliente continua sendo cobrado automaticamente todo ciclo.
+    if (!skipGatewayCancel) {
+      await this.payments.cancelRecurringSubscription(sub.gatewayName, sub.externalSubscriptionId)
+    }
 
     const updated = await this.repo.update(subscriptionId, {
       status: 'canceled',
@@ -205,14 +215,16 @@ export class SubscriptionsService {
     return updated
   }
 
-  // Cancelamento por external_subscription_id (vindo do gateway via webhook)
+  // Cancelamento por external_subscription_id (vindo do gateway via webhook).
+  // O gateway já cancelou a cobrança recorrente do lado dele (é o próprio
+  // evento que está chegando aqui) — não precisa (nem deve) chamar de volta.
   async cancelByExternal(externalId: string): Promise<void> {
     const sub = await this.repo.findByExternalId(externalId)
     if (!sub) {
       this.logger.warn(`Assinatura externa não encontrada: ${externalId}`)
       return
     }
-    await this.cancel(sub.id, 'Cancelado pelo gateway', false)
+    await this.cancel(sub.id, 'Cancelado pelo gateway', false, undefined, true)
   }
 
   // ── Recorrência nativa do gateway (ex: Stripe Subscriptions) ────────────────

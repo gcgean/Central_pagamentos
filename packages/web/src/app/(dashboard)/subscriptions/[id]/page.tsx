@@ -145,7 +145,7 @@ export default function SubscriptionDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['subscription', id] })
       setShowCancelModal(false)
     },
-    onError: () => setActionError('Erro ao cancelar assinatura'),
+    onError: (err: any) => setActionError(err?.response?.data?.message ?? 'Erro ao cancelar assinatura'),
   })
 
   const checkoutMutation = useMutation({
