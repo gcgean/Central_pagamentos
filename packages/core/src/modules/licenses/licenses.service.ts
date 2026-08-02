@@ -166,6 +166,44 @@ export class LicensesService {
     return updated
   }
 
+  // ─── Expirar trial vencido ────────────────────────────────────────────────
+  // Trials não têm carência (graceDays: 0 na emissão) — diferente de suspend(),
+  // não há grace_until para respeitar; vencem direto na data.
+
+  async expireTrial(licenseId: string, actorId?: string, actorType = 'system'): Promise<License> {
+    const license = await this.findById(licenseId)
+
+    if (license.status === 'expired') {
+      return license // já expirada, idempotente
+    }
+
+    const updated = await this.repo.update(licenseId, {
+      status: 'expired',
+      suspendedAt: new Date(),
+      suspendedReason: 'Trial vencido',
+    })
+
+    await this.internalEvents.dispatch({
+      productId: license.productId,
+      customerId: license.customerId,
+      eventType: 'license.trial_expired',
+      payload: { licenseId },
+    })
+
+    await this.audit.log({
+      actorType: actorType as any,
+      actorId,
+      action: 'license.expire_trial',
+      entityType: 'license',
+      entityId: licenseId,
+      beforeData: license,
+      afterData: updated,
+    })
+    this.accessCache.invalidateStatus(license.customerId, license.productId)
+
+    return updated
+  }
+
   // ─── Reativar ────────────────────────────────────────────────────────────
 
   async reactivate(licenseId: string, actorId?: string, actorType = 'admin'): Promise<License> {
@@ -268,6 +306,20 @@ export class LicensesService {
     }
 
     this.logger.log(`${count} licenças expiradas processadas`)
+    return count
+  }
+
+  async expireOverdueTrials(): Promise<number> {
+    const now = new Date()
+    const expired = await this.repo.findExpiredTrials(now)
+
+    let count = 0
+    for (const license of expired) {
+      await this.expireTrial(license.id)
+      count++
+    }
+
+    this.logger.log(`${count} trials vencidos processados`)
     return count
   }
 }

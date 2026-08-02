@@ -133,6 +133,19 @@ export class LicensesRepository {
     return rows.map(this.map)
   }
 
+  // Trials não têm carência (graceDays: 0 na emissão) — vencem direto na data,
+  // sem o intervalo que findExpiredAfterGrace exige.
+  async findExpiredTrials(now: Date): Promise<License[]> {
+    const rows = await this.sql`
+      SELECT * FROM licenses
+      WHERE status = 'active'
+        AND origin_type = 'trial'
+        AND expires_at IS NOT NULL
+        AND expires_at < ${now}
+    `
+    return rows.map(this.map)
+  }
+
   async update(id: string, data: Partial<License>): Promise<License> {
     const [row] = await this.sql`
       UPDATE licenses SET
