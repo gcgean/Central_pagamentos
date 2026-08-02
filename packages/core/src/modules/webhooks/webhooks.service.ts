@@ -161,6 +161,7 @@ import { Controller, Post, Param, Req, Headers, RawBodyRequest } from '@nestjs/c
 import { ConfigService } from '@nestjs/config'
 import { MercadoPagoGateway } from '../payments/gateways/mercadopago.gateway'
 import { LivePixGateway } from '../payments/gateways/livepix.gateway'
+import { StripeGateway } from '../payments/gateways/stripe.gateway'
 import { SettingsService } from '../settings/settings.service'
 
 @Controller({ path: 'webhooks', version: '1' })
@@ -174,6 +175,7 @@ export class WebhooksController {
     private readonly settings: SettingsService,
     private readonly mp: MercadoPagoGateway,
     private readonly livepix: LivePixGateway,
+    private readonly stripe: StripeGateway,
   ) {}
 
   // Ponto de entrada para qualquer gateway: /api/v1/webhooks/gateway/asaas
@@ -200,6 +202,16 @@ export class WebhooksController {
           throw new BadRequestException('Assinatura de webhook inválida')
         }
       }
+    } else if (provider === 'stripe') {
+      // A Stripe exige os bytes brutos originais do corpo (rawBody) para validar o
+      // HMAC — um JSON.stringify do body reparseado teria espaçamento/ordem
+      // diferentes e invalidaria a assinatura.
+      if (!stripeSignature) {
+        throw new BadRequestException('Assinatura de webhook ausente (header stripe-signature)')
+      }
+      const cfg = await this.settings.getGatewayConfig()
+      this.stripe.setCredentials(cfg.stripe.secretKey, cfg.stripe.webhookSecret)
+      this.stripe.verifyWebhookSignature(rawBody, stripeSignature) // lança BadRequestException se inválida
     } else {
       const secret = this.config.get<string>(`gateways.${provider}.webhookSecret`)
       if (secret && signature) {
@@ -246,6 +258,31 @@ export class WebhooksController {
       }
 
       externalId = resourceId || reference
+    }
+
+    // Stripe: o Event já traz o Checkout Session completo em data.object — sem
+    // chamada extra à API. externalId = session id, o mesmo gravado como
+    // externalChargeId no checkout (correlação direta, como na LivePix).
+    if (provider === 'stripe') {
+      const stripeType = String(body?.type ?? '')
+      const obj = (body?.data?.object ?? {}) as { id?: string; client_reference_id?: string }
+      const objId = String(obj.id ?? '')
+      const externalReference = String(obj.client_reference_id ?? '')
+
+      if (stripeType === 'checkout.session.completed') {
+        eventType = 'payment.approved'
+        payload = { ...body, chargeId: objId, externalReference }
+      } else if (stripeType === 'checkout.session.expired') {
+        eventType = 'payment.failed'
+        payload = { ...body, chargeId: objId, externalReference, reason: 'checkout_session_expired' }
+      } else if (stripeType === 'customer.subscription.deleted') {
+        eventType = 'subscription.canceled'
+        payload = { ...body, externalSubscriptionId: objId }
+      } else {
+        eventType = stripeType || 'unknown'
+      }
+
+      externalId = objId
     }
 
     if (provider === 'mercadopago' && ['payment.updated', 'payment.created'].includes(eventType) && externalId) {

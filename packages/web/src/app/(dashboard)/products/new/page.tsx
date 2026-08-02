@@ -19,7 +19,7 @@ const schema = z.object({
   description: z.string().optional(),
   billingType: z.enum(['recurring', 'one_time', 'hybrid']),
   isActive:    z.boolean().default(true),
-  gatewayName: z.enum(['', 'asaas', 'mercadopago', 'livepix']).optional(),
+  gatewayName: z.enum(['', 'asaas', 'mercadopago', 'livepix', 'stripe']).optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -122,6 +122,7 @@ export default function NewProductPage() {
                 { value: 'asaas', label: 'Asaas' },
                 { value: 'mercadopago', label: 'Mercado Pago' },
                 { value: 'livepix', label: 'LivePix' },
+                { value: 'stripe', label: 'Stripe' },
               ]}
               {...register('gatewayName')}
             />

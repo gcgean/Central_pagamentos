@@ -43,7 +43,7 @@ export interface CreateChargeParams {
   value: number             // em reais (o Asaas usa reais, convertemos de centavos)
   dueDate: string           // YYYY-MM-DD
   description: string
-  billingType: 'PIX' | 'CREDIT_CARD'
+  billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO'
   externalReference?: string
   installmentCount?: number
   installmentValue?: number

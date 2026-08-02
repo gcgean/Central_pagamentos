@@ -33,9 +33,9 @@ class ChangePlanDto {
 }
 
 class CreateCheckoutDto {
-  @ApiProperty({ enum: ['PIX', 'CREDIT_CARD'] })
-  @IsIn(['PIX', 'CREDIT_CARD'])
-  billingType: 'PIX' | 'CREDIT_CARD'
+  @ApiProperty({ enum: ['PIX', 'CREDIT_CARD', 'BOLETO'] })
+  @IsIn(['PIX', 'CREDIT_CARD', 'BOLETO'])
+  billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO'
 
   @ApiPropertyOptional() @IsOptional() @IsNumber() installmentCount?: number
 

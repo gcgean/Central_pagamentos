@@ -11,22 +11,23 @@ import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 import {
   Settings, CreditCard, CheckCircle2, XCircle,
-  Eye, EyeOff, Zap, TestTube2, AlertCircle, Radio, Link2,
+  Eye, EyeOff, Zap, TestTube2, AlertCircle, Radio, Link2, Layers,
 } from 'lucide-react'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type ActiveGateway = 'mercadopago' | 'asaas' | 'livepix'
+type ActiveGateway = 'mercadopago' | 'asaas' | 'livepix' | 'stripe'
 
 interface GatewayConfig {
   activeGateway: ActiveGateway
   mercadopago: { accessToken: string; webhookSecret: string; isConfigured: boolean }
   asaas: { apiKey: string; isConfigured: boolean }
   livepix: { clientId: string; clientSecret: string; scope: string; isConfigured: boolean }
+  stripe: { secretKey: string; publishableKey: string; webhookSecret: string; isConfigured: boolean }
 }
 
 const schema = z.object({
-  activeGateway: z.enum(['mercadopago', 'asaas', 'livepix']),
+  activeGateway: z.enum(['mercadopago', 'asaas', 'livepix', 'stripe']),
   mercadopago_accessToken: z.string().optional(),
   mercadopago_publicKey: z.string().optional(),
   mercadopago_webhookSecret: z.string().optional(),
@@ -34,6 +35,8 @@ const schema = z.object({
   livepix_clientId: z.string().optional(),
   livepix_clientSecret: z.string().optional(),
   livepix_scope: z.string().optional(),
+  stripe_secretKey: z.string().optional(),
+  stripe_publishableKey: z.string().optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -169,6 +172,8 @@ export default function SettingsPage() {
       livepix_clientId: '',
       livepix_clientSecret: '',
       livepix_scope: '',
+      stripe_secretKey: '',
+      stripe_publishableKey: '',
     },
     values: config
       ? {
@@ -179,6 +184,8 @@ export default function SettingsPage() {
           livepix_clientId: config.livepix?.clientId ?? '',
           livepix_clientSecret: '',
           livepix_scope: config.livepix?.scope ?? '',
+          stripe_secretKey: '',
+          stripe_publishableKey: config.stripe?.publishableKey ?? '',
         }
       : undefined,
   })
@@ -209,6 +216,11 @@ export default function SettingsPage() {
           payload.livepix.scope = data.livepix_scope
         }
       }
+      if (data.stripe_secretKey || data.stripe_publishableKey) {
+        payload.stripe = {}
+        if (data.stripe_secretKey) payload.stripe.secretKey = data.stripe_secretKey
+        if (data.stripe_publishableKey) payload.stripe.publishableKey = data.stripe_publishableKey
+      }
       const { data: res } = await api.put('/settings/gateway', payload)
       return res
     },
@@ -222,6 +234,8 @@ export default function SettingsPage() {
         livepix_clientId: updated.livepix?.clientId ?? '',
         livepix_clientSecret: '',
         livepix_scope: updated.livepix?.scope ?? '',
+        stripe_secretKey: '',
+        stripe_publishableKey: updated.stripe?.publishableKey ?? '',
       })
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
@@ -234,6 +248,25 @@ export default function SettingsPage() {
       return data as { ok: boolean; webhookUrl: string; message: string }
     },
     onSuccess: (res) => {
+      setWebhookResult({ ok: true, message: `${res.message} (${res.webhookUrl})` })
+      setTimeout(() => setWebhookResult(null), 6000)
+    },
+    onError: (err: any) => {
+      setWebhookResult({
+        ok: false,
+        message: err?.response?.data?.message ?? 'Erro ao registrar webhook',
+      })
+      setTimeout(() => setWebhookResult(null), 6000)
+    },
+  })
+
+  const registerStripeWebhookMutation = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post('/settings/gateway/stripe/webhook')
+      return data as { ok: boolean; webhookUrl: string; message: string }
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['settings-gateway'] })
       setWebhookResult({ ok: true, message: `${res.message} (${res.webhookUrl})` })
       setTimeout(() => setWebhookResult(null), 6000)
     },
@@ -328,6 +361,15 @@ export default function SettingsPage() {
                       label="LivePix"
                       description="Checkout hospedado via LivePix. Sem estorno/cancelamento por API — veja limitações abaixo."
                       configured={config?.livepix.isConfigured}
+                    />
+                    <GatewayOption
+                      value="stripe"
+                      selected={field.value === 'stripe'}
+                      onSelect={() => field.onChange('stripe')}
+                      icon={<Layers size={16} className="text-indigo-600" />}
+                      label="Stripe"
+                      description="Checkout hospedado — cartão, PIX e boleto. Estorno e cancelamento completos via API."
+                      configured={config?.stripe.isConfigured}
                     />
                   </>
                 )}
@@ -577,6 +619,112 @@ export default function SettingsPage() {
                         <Link2 size={14} /> Registrar Webhook
                       </Button>
                     </div>
+                    {webhookResult && (
+                      <div className={`mt-2 flex items-center gap-2 p-2 rounded-lg border text-xs ${
+                        webhookResult.ok
+                          ? 'bg-green-50 border-green-200 text-green-800'
+                          : 'bg-red-50 border-red-200 text-red-800'
+                      }`}>
+                        {webhookResult.ok
+                          ? <CheckCircle2 size={12} className="flex-shrink-0" />
+                          : <XCircle size={12} className="flex-shrink-0" />}
+                        <p>{webhookResult.message}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
+        {/* Stripe credentials */}
+        {activeGateway === 'stripe' && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Layers size={16} className="text-indigo-600" />
+                <h3 className="text-sm font-semibold text-gray-900">Credenciais — Stripe</h3>
+              </div>
+            </CardHeader>
+            <CardBody>
+              <div className="space-y-4">
+                {config?.stripe.isConfigured && (
+                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <CheckCircle2 size={14} className="text-green-600" />
+                    <div>
+                      <p className="text-sm font-medium text-green-800">Secret Key configurada</p>
+                      <p className="text-xs text-green-600 font-mono">{config.stripe.secretKey}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-700 space-y-1">
+                  <p className="font-medium">Onde obter suas credenciais:</p>
+                  <p>
+                    Acesse{' '}
+                    <a
+                      href="https://dashboard.stripe.com/apikeys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline font-medium"
+                    >
+                      dashboard.stripe.com/apikeys
+                    </a>
+                  </p>
+                  <p>• Teste: chave começa com <code className="font-mono">sk_test_</code></p>
+                  <p>• Produção: chave começa com <code className="font-mono">sk_live_</code></p>
+                </div>
+
+                <Controller
+                  name="stripe_secretKey"
+                  control={control}
+                  render={({ field }) => (
+                    <SecretInput
+                      id="stripe-secret-key"
+                      label="Secret Key (Obrigatório)"
+                      placeholder={config?.stripe.isConfigured ? 'Deixe em branco para manter a atual' : 'sk_test_xxxx ou sk_live_xxxx'}
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      hint="Usada no servidor para criar cobranças e assinaturas"
+                    />
+                  )}
+                />
+
+                <Input
+                  id="stripe-publishable-key"
+                  label="Publishable Key (opcional)"
+                  placeholder="pk_test_xxxx ou pk_live_xxxx"
+                  {...register('stripe_publishableKey')}
+                />
+                <p className="text-xs text-gray-400 -mt-2">
+                  Não é secreta — usada apenas se o frontend precisar tokenizar cartão diretamente.
+                </p>
+
+                {config?.stripe.isConfigured && (
+                  <div className="pt-2 border-t border-gray-100">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Webhook</p>
+                        <p className="text-xs text-gray-500">
+                          Registra o endpoint na Stripe e salva o signing secret automaticamente.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => registerStripeWebhookMutation.mutate()}
+                        loading={registerStripeWebhookMutation.isPending}
+                      >
+                        <Link2 size={14} /> Registrar Webhook
+                      </Button>
+                    </div>
+                    {config.stripe.webhookSecret && (
+                      <p className="mt-2 text-xs text-gray-500">
+                        Signing secret atual: <code className="font-mono">{config.stripe.webhookSecret}</code>
+                      </p>
+                    )}
                     {webhookResult && (
                       <div className={`mt-2 flex items-center gap-2 p-2 rounded-lg border text-xs ${
                         webhookResult.ok

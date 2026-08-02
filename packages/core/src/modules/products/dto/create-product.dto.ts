@@ -17,6 +17,7 @@ export enum ProductGateway {
   ASAAS       = 'asaas',
   MERCADOPAGO = 'mercadopago',
   LIVEPIX     = 'livepix',
+  STRIPE      = 'stripe',
 }
 
 export class CreateProductDto {

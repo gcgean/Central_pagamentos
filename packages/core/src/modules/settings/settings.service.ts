@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { SettingsRepository } from './settings.repository'
 
-export type ActiveGateway = 'mercadopago' | 'asaas' | 'livepix'
+export type ActiveGateway = 'mercadopago' | 'asaas' | 'livepix' | 'stripe'
 
 export interface GatewayConfig {
   activeGateway: ActiveGateway
@@ -22,6 +22,12 @@ export interface GatewayConfig {
     scope: string
     isConfigured: boolean
   }
+  stripe: {
+    secretKey: string
+    publishableKey: string
+    webhookSecret: string
+    isConfigured: boolean
+  }
 }
 
 export interface UpdateGatewayConfigDto {
@@ -38,6 +44,11 @@ export interface UpdateGatewayConfigDto {
     clientId?: string
     clientSecret?: string
     scope?: string
+  }
+  stripe?: {
+    secretKey?: string
+    publishableKey?: string
+    webhookSecret?: string
   }
 }
 
@@ -67,9 +78,13 @@ export class SettingsService implements OnModuleInit {
     const lpClientSecret = settings['gateway.livepix.client_secret'] ?? this.config.get<string>('LIVEPIX_CLIENT_SECRET', '')
     const lpScope         = settings['gateway.livepix.scope']         ?? this.config.get<string>('LIVEPIX_SCOPE', '')
 
+    const stripeSecretKey      = settings['gateway.stripe.secret_key']      ?? this.config.get<string>('STRIPE_SECRET_KEY', '')
+    const stripePublishableKey = settings['gateway.stripe.publishable_key'] ?? this.config.get<string>('STRIPE_PUBLISHABLE_KEY', '')
+    const stripeWebhookSecret  = settings['gateway.stripe.webhook_secret']  ?? this.config.get<string>('STRIPE_WEBHOOK_SECRET', '')
+
     const dbActive = settings['gateway.active']
     const activeGateway: ActiveGateway =
-      dbActive === 'mercadopago' || dbActive === 'livepix' ? dbActive : 'asaas'
+      dbActive === 'mercadopago' || dbActive === 'livepix' || dbActive === 'stripe' ? dbActive : 'asaas'
 
     return {
       activeGateway,
@@ -88,6 +103,12 @@ export class SettingsService implements OnModuleInit {
         clientSecret: lpClientSecret,
         scope:        lpScope,
         isConfigured: !!lpClientId && !!lpClientSecret,
+      },
+      stripe: {
+        secretKey:      stripeSecretKey,
+        publishableKey: stripePublishableKey,
+        webhookSecret:  stripeWebhookSecret,
+        isConfigured:   !!stripeSecretKey,
       },
     }
   }
@@ -111,6 +132,12 @@ export class SettingsService implements OnModuleInit {
         ...cfg.livepix,
         clientId:     cfg.livepix.clientId,
         clientSecret: cfg.livepix.clientSecret ? this.mask(cfg.livepix.clientSecret) : '',
+      },
+      stripe: {
+        ...cfg.stripe,
+        secretKey:     cfg.stripe.secretKey ? this.mask(cfg.stripe.secretKey) : '',
+        publishableKey: cfg.stripe.publishableKey,
+        webhookSecret:  cfg.stripe.webhookSecret ? this.mask(cfg.stripe.webhookSecret) : '',
       },
     }
   }
@@ -147,6 +174,16 @@ export class SettingsService implements OnModuleInit {
     // ao contrário de client_id/secret (que nunca devem ser zerados por engano).
     if (dto.livepix?.scope !== undefined) {
       await this.repo.set('gateway.livepix.scope', dto.livepix.scope)
+    }
+
+    if (dto.stripe?.secretKey !== undefined && dto.stripe.secretKey !== '') {
+      await this.repo.set('gateway.stripe.secret_key', dto.stripe.secretKey)
+    }
+    if (dto.stripe?.publishableKey !== undefined && dto.stripe.publishableKey !== '') {
+      await this.repo.set('gateway.stripe.publishable_key', dto.stripe.publishableKey)
+    }
+    if (dto.stripe?.webhookSecret !== undefined && dto.stripe.webhookSecret !== '') {
+      await this.repo.set('gateway.stripe.webhook_secret', dto.stripe.webhookSecret)
     }
 
     return this.getGatewayConfigMasked()

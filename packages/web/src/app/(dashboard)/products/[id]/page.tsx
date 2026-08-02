@@ -23,7 +23,7 @@ interface Product {
   name: string
   description?: string
   trialDays?: number
-  gatewayName?: 'asaas' | 'mercadopago' | 'livepix' | null
+  gatewayName?: 'asaas' | 'mercadopago' | 'livepix' | 'stripe' | null
   isActive: boolean
   createdAt: string
 }
@@ -60,13 +60,14 @@ type PlanFormData = z.infer<typeof planSchema>
 
 const productSchema = z.object({
   trialDays: z.coerce.number().int().min(0, 'Dias de trial deve ser maior ou igual a 0'),
-  gatewayName: z.enum(['', 'asaas', 'mercadopago', 'livepix']).optional(),
+  gatewayName: z.enum(['', 'asaas', 'mercadopago', 'livepix', 'stripe']).optional(),
 })
 
 const gatewayLabels: Record<string, string> = {
   asaas: 'Asaas',
   mercadopago: 'Mercado Pago',
   livepix: 'LivePix',
+  stripe: 'Stripe',
 }
 
 type ProductFormData = z.infer<typeof productSchema>
@@ -596,6 +597,7 @@ export default function ProductDetailPage() {
               { value: 'asaas', label: 'Asaas' },
               { value: 'mercadopago', label: 'Mercado Pago' },
               { value: 'livepix', label: 'LivePix' },
+              { value: 'stripe', label: 'Stripe' },
             ]}
             {...registerProduct('gatewayName')}
           />

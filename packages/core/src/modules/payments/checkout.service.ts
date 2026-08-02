@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { AsaasGateway } from './gateways/asaas.gateway'
 import { MercadoPagoGateway } from './gateways/mercadopago.gateway'
 import { LivePixGateway } from './gateways/livepix.gateway'
+import { StripeGateway } from './gateways/stripe.gateway'
 import { PaymentsRepository } from './payments.repository'
 import { CustomersService } from '../customers/customers.service'
 import { PlansService } from '../plans/plans.service'
@@ -17,7 +18,7 @@ export interface CreateCheckoutParams {
   planId: string
   originType: 'subscription' | 'order'
   originId: string
-  billingType: 'PIX' | 'CREDIT_CARD'
+  billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO'
   installmentCount?: number
   remoteIp?: string
   payerName?: string
@@ -39,6 +40,7 @@ export class CheckoutService {
     private readonly asaas: AsaasGateway,
     private readonly mp: MercadoPagoGateway,
     private readonly livepix: LivePixGateway,
+    private readonly stripe: StripeGateway,
     private readonly repo: PaymentsRepository,
     private readonly customers: CustomersService,
     private readonly plans: PlansService,
@@ -66,6 +68,10 @@ export class CheckoutService {
 
     if (activeGateway === 'livepix') {
       return this.createLivePixCheckout(params, plan, product, customer, gwConfig)
+    }
+
+    if (activeGateway === 'stripe') {
+      return this.createStripeCheckout(params, plan, product, customer, gwConfig)
     }
 
     return this.createAsaasCheckout(params, plan, product, customer)
@@ -287,6 +293,80 @@ export class CheckoutService {
     }
   }
 
+  // ── Stripe ───────────────────────────────────────────────────────────────────
+  //
+  // Checkout hospedado (Checkout Sessions) para todos os métodos — mesmo padrão
+  // usado no cartão do Mercado Pago e na LivePix. externalChargeId = Checkout
+  // Session id, que também identifica o evento `checkout.session.completed`.
+
+  private async createStripeCheckout(
+    params: CreateCheckoutParams,
+    plan: any,
+    product: any,
+    customer: any,
+    gwConfig: Awaited<ReturnType<SettingsService['getGatewayConfig']>>,
+  ) {
+    if (!gwConfig.stripe.isConfigured) {
+      throw new BadRequestException(
+        'Credenciais da Stripe não configuradas. Acesse Configurações → Gateway.',
+      )
+    }
+
+    this.stripe.setCredentials(gwConfig.stripe.secretKey, gwConfig.stripe.webhookSecret)
+
+    const dueDate = dayjs().add(3, 'day').format('YYYY-MM-DD')
+    const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
+    const originPath = `${appUrl}/${params.originType === 'order' ? 'orders' : 'subscriptions'}/${params.originId}`
+    const returnUrl = params.returnUrl && /^https?:\/\//i.test(params.returnUrl.trim())
+      ? params.returnUrl.trim()
+      : originPath
+
+    this.logger.log(`Iniciando checkout Stripe [${params.billingType}] para ${params.originType}:${params.originId}`)
+
+    const checkout = await this.stripe.createCheckoutSession({
+      amount: plan.amount,
+      currency: plan.currency ?? 'BRL',
+      description: `${product.name} — ${plan.name}`,
+      billingType: params.billingType,
+      customerEmail: customer.email,
+      successUrl: `${returnUrl}${returnUrl.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: returnUrl,
+      externalReference: `${params.originType}:${params.originId}`,
+      installments: params.installmentCount,
+    })
+
+    const invoice = await this.repo.findInvoiceByOrigin(params.originType, params.originId)
+    const localCharge = await this.repo.createCharge({
+      invoiceId: invoice.id,
+      customerId: params.customerId,
+      amount: plan.amount,
+      currency: plan.currency ?? 'BRL',
+      paymentMethod: params.billingType.toLowerCase() as any,
+      gatewayName: 'stripe',
+      externalChargeId: checkout.id,
+      checkoutUrl: checkout.url ?? undefined,
+      installmentCount: params.installmentCount ?? 1,
+      attemptNumber: 1,
+      maxAttempts: 3,
+    })
+
+    this.logger.log(`Checkout Stripe criado: charge ${localCharge.id} → session ${checkout.id}`)
+
+    return {
+      chargeId: localCharge.id,
+      externalChargeId: checkout.id,
+      status: localCharge.status,
+      checkoutUrl: checkout.url,
+      pixCode: null,
+      pixQrCode: null,
+      pixPayload: null,
+      boletoUrl: null,
+      amount: plan.amount,
+      currency: plan.currency ?? 'BRL',
+      dueDate,
+    }
+  }
+
   // ── Asaas ────────────────────────────────────────────────────────────────────
 
   private async createAsaasCheckout(
@@ -376,7 +456,7 @@ export class CheckoutService {
 
   private resolvePayerData(
     customer: any,
-    billingType: 'PIX' | 'CREDIT_CARD',
+    billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO',
     payerName?: string,
     payerDocument?: string,
   ): { name: string; document: string; shouldPersistDocument: boolean } {
@@ -436,7 +516,7 @@ export class CheckoutService {
     productId: string
     planId: string
     subscriptionId: string
-    billingType: 'PIX' | 'CREDIT_CARD'
+    billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO'
   }) {
     const customer = await this.customers.findById(params.customerId)
     const plan     = await this.plans.findById(params.planId)
@@ -495,6 +575,34 @@ export class CheckoutService {
         externalSubscriptionId: sub.reference,
         checkoutUrl: sub.redirectUrl,
         cycle: recurrence,
+        nextDueDate: null,
+      }
+    }
+
+    if (activeGateway === 'stripe') {
+      if (!gwConfig.stripe.isConfigured) {
+        throw new BadRequestException('Credenciais da Stripe não configuradas.')
+      }
+      this.stripe.setCredentials(gwConfig.stripe.secretKey, gwConfig.stripe.webhookSecret)
+
+      const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
+      const returnUrl = `${appUrl}/subscriptions/${params.subscriptionId}`
+
+      const checkout = await this.stripe.createSubscriptionCheckout({
+        amount: plan.amount,
+        currency: plan.currency ?? 'BRL',
+        description: `${product.name} — ${plan.name}`,
+        intervalUnit: plan.intervalUnit,
+        intervalCount: plan.intervalCount,
+        customerEmail: customer.email,
+        successUrl: `${returnUrl}?session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: returnUrl,
+        externalReference: `subscription:${params.subscriptionId}`,
+      })
+
+      return {
+        externalSubscriptionId: checkout.id,
+        checkoutUrl: checkout.url,
         nextDueDate: null,
       }
     }

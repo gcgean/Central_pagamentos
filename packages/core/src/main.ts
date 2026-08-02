@@ -13,7 +13,10 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter({ logger: false }),
-    { bufferLogs: true },
+    // rawBody: true — necessário para verificar a assinatura de webhooks (Stripe
+    // exige os bytes exatos originais; um JSON.stringify do body reparseado
+    // pode ter espaçamento/ordem diferentes e invalidar o HMAC).
+    { bufferLogs: true, rawBody: true },
   )
 
   const config = app.get(ConfigService)

@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { AsaasGateway } from './gateways/asaas.gateway'
 import { MercadoPagoGateway } from './gateways/mercadopago.gateway'
 import { LivePixGateway } from './gateways/livepix.gateway'
+import { StripeGateway } from './gateways/stripe.gateway'
 import { PaymentsRepository } from './payments.repository'
 import { SettingsService } from '../settings/settings.service'
 import { InvoicesService } from '../invoices/invoices.service'
@@ -15,6 +16,7 @@ export class PaymentsService {
     private readonly asaas: AsaasGateway,
     private readonly mp: MercadoPagoGateway,
     private readonly livepix: LivePixGateway,
+    private readonly stripe: StripeGateway,
     private readonly settings: SettingsService,
     private readonly repo: PaymentsRepository,
     private readonly invoices: InvoicesService,
@@ -33,6 +35,10 @@ export class PaymentsService {
       throw new BadRequestException(
         'A API da LivePix não disponibiliza estorno programático. O reembolso precisa ser feito manualmente pelo painel da LivePix.',
       )
+    } else if (gateway === 'stripe') {
+      const cfg = await this.settings.getGatewayConfig()
+      this.stripe.setCredentials(cfg.stripe.secretKey, cfg.stripe.webhookSecret)
+      await this.stripe.refundPayment(externalChargeId, value)
     } else {
       await this.asaas.refundPayment(externalChargeId, value)
     }
@@ -52,6 +58,10 @@ export class PaymentsService {
       throw new BadRequestException(
         'A API da LivePix não disponibiliza cancelamento programático de cobrança.',
       )
+    } else if (gateway === 'stripe') {
+      const cfg = await this.settings.getGatewayConfig()
+      this.stripe.setCredentials(cfg.stripe.secretKey, cfg.stripe.webhookSecret)
+      await this.stripe.cancelCharge(externalChargeId)
     } else {
       await this.asaas.cancelCharge(externalChargeId)
     }
@@ -72,6 +82,11 @@ export class PaymentsService {
       const cfg = await this.settings.getGatewayConfig()
       this.livepix.setCredentials(cfg.livepix.clientId, cfg.livepix.clientSecret, cfg.livepix.scope)
       return this.livepix.getPayment(externalChargeId)
+    }
+    if (gateway === 'stripe') {
+      const cfg = await this.settings.getGatewayConfig()
+      this.stripe.setCredentials(cfg.stripe.secretKey, cfg.stripe.webhookSecret)
+      return this.stripe.getCheckoutSession(externalChargeId)
     }
     return this.asaas.getCharge(externalChargeId)
   }

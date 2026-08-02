@@ -9,6 +9,7 @@ import { ApiProperty } from '@nestjs/swagger'
 import { AdminJwtGuard } from '../../shared/guards/admin-jwt.guard'
 import { SettingsService, ActiveGateway } from './settings.service'
 import { LivePixGateway } from '../payments/gateways/livepix.gateway'
+import { StripeGateway } from '../payments/gateways/stripe.gateway'
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
@@ -53,10 +54,27 @@ class LivePixCredentialsDto {
   scope?: string
 }
 
-class UpdateGatewayDto {
-  @ApiProperty({ enum: ['mercadopago', 'asaas', 'livepix'], required: false })
+class StripeCredentialsDto {
+  @ApiProperty({ required: false, description: 'Secret Key (sk_test_... ou sk_live_...)' })
   @IsOptional()
-  @IsIn(['mercadopago', 'asaas', 'livepix'])
+  @IsString()
+  secretKey?: string
+
+  @ApiProperty({ required: false, description: 'Publishable Key (pk_test_... ou pk_live_...), usada no frontend' })
+  @IsOptional()
+  @IsString()
+  publishableKey?: string
+
+  @ApiProperty({ required: false, description: 'Webhook signing secret (whsec_...). Preenchido automaticamente ao registrar o webhook.' })
+  @IsOptional()
+  @IsString()
+  webhookSecret?: string
+}
+
+class UpdateGatewayDto {
+  @ApiProperty({ enum: ['mercadopago', 'asaas', 'livepix', 'stripe'], required: false })
+  @IsOptional()
+  @IsIn(['mercadopago', 'asaas', 'livepix', 'stripe'])
   activeGateway?: ActiveGateway
 
   @ApiProperty({ type: MercadoPagoCredentialsDto, required: false })
@@ -76,11 +94,17 @@ class UpdateGatewayDto {
   @ValidateNested()
   @Type(() => LivePixCredentialsDto)
   livepix?: LivePixCredentialsDto
+
+  @ApiProperty({ type: StripeCredentialsDto, required: false })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => StripeCredentialsDto)
+  stripe?: StripeCredentialsDto
 }
 
 class TestGatewayDto {
-  @ApiProperty({ enum: ['mercadopago', 'asaas', 'livepix'] })
-  @IsIn(['mercadopago', 'asaas', 'livepix'])
+  @ApiProperty({ enum: ['mercadopago', 'asaas', 'livepix', 'stripe'] })
+  @IsIn(['mercadopago', 'asaas', 'livepix', 'stripe'])
   gateway: ActiveGateway
 }
 
@@ -88,6 +112,16 @@ class RegisterLivePixWebhookDto {
   @ApiProperty({
     required: false,
     description: 'URL pública do webhook. Se omitida, usa APP_URL + /api/v1/webhooks/gateway/livepix.',
+  })
+  @IsOptional()
+  @IsString()
+  url?: string
+}
+
+class RegisterStripeWebhookDto {
+  @ApiProperty({
+    required: false,
+    description: 'URL pública do webhook. Se omitida, usa APP_URL + /api/v1/webhooks/gateway/stripe.',
   })
   @IsOptional()
   @IsString()
@@ -105,6 +139,7 @@ export class SettingsController {
   constructor(
     private readonly settings: SettingsService,
     private readonly livepix: LivePixGateway,
+    private readonly stripe: StripeGateway,
     private readonly config: ConfigService,
   ) {}
 
@@ -179,6 +214,26 @@ export class SettingsController {
       }
     }
 
+    if (dto.gateway === 'stripe') {
+      if (!cfg.stripe.isConfigured) {
+        throw new BadRequestException('Secret Key da Stripe não configurada.')
+      }
+      const isTest = cfg.stripe.secretKey.startsWith('sk_test_')
+      const isLive = cfg.stripe.secretKey.startsWith('sk_live_')
+      if (!isTest && !isLive) {
+        throw new BadRequestException('Secret Key inválida. Deve começar com sk_test_ ou sk_live_.')
+      }
+      try {
+        const account = await this.stripe.verifyCredentials(cfg.stripe.secretKey)
+        return {
+          ok: true,
+          message: `Conexão Stripe OK. Conta: ${account.email ?? account.accountId ?? 'sem identificação'}. Ambiente: ${isTest ? '🧪 Teste' : '🚀 Produção'}`,
+        }
+      } catch (err: any) {
+        throw new BadRequestException(err?.message ?? 'Falha ao testar conexão com a Stripe')
+      }
+    }
+
     throw new BadRequestException('Gateway desconhecido.')
   }
 
@@ -212,6 +267,42 @@ export class SettingsController {
     } catch (err: any) {
       // 400 em vez de 502 para a mensagem real chegar ao frontend (proxy-safe).
       throw new BadRequestException(err?.message ?? 'Falha ao registrar webhook na LivePix')
+    }
+  }
+
+  @Post('gateway/stripe/webhook')
+  @ApiOperation({ summary: 'Registra (ou confirma) o webhook endpoint da Stripe' })
+  async registerStripeWebhook(@Body() dto: RegisterStripeWebhookDto) {
+    const cfg = await this.settings.getGatewayConfig()
+    if (!cfg.stripe.isConfigured) {
+      throw new BadRequestException('Secret Key da Stripe não configurada.')
+    }
+
+    const appUrl = (this.config.get<string>('app.url', '') || this.config.get<string>('APP_URL', '') || '').replace(/\/$/, '')
+    const webhookUrl = dto.url || `${appUrl}/api/v1/webhooks/gateway/stripe`
+    if (!/^https?:\/\//.test(webhookUrl)) {
+      throw new BadRequestException('Informe uma URL de webhook válida (ou configure APP_URL no ambiente).')
+    }
+
+    this.stripe.setCredentials(cfg.stripe.secretKey, cfg.stripe.webhookSecret)
+    try {
+      const result = await this.stripe.ensureWebhookEndpoint(webhookUrl)
+      // A Stripe só revela o signing secret na criação — salvamos automaticamente
+      // para que a verificação de assinatura funcione sem passo manual.
+      if (result.secret) {
+        await this.settings.updateGatewayConfig({ stripe: { webhookSecret: result.secret } })
+      }
+      return {
+        ok: true,
+        webhookUrl,
+        webhookId: result.id,
+        secretSaved: !!result.secret,
+        message: result.alreadyRegistered
+          ? 'Webhook já estava registrado na Stripe.'
+          : 'Webhook registrado na Stripe e signing secret salvo automaticamente.',
+      }
+    } catch (err: any) {
+      throw new BadRequestException(err?.message ?? 'Falha ao registrar webhook na Stripe')
     }
   }
 }

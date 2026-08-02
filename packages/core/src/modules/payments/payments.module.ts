@@ -6,6 +6,7 @@ import { PaymentsRepository } from './payments.repository'
 import { AsaasGateway } from './gateways/asaas.gateway'
 import { MercadoPagoGateway } from './gateways/mercadopago.gateway'
 import { LivePixGateway } from './gateways/livepix.gateway'
+import { StripeGateway } from './gateways/stripe.gateway'
 import { LicensesModule } from '../licenses/licenses.module'
 import { PlansModule } from '../plans/plans.module'
 import { ProductsModule } from '../products/products.module'
@@ -24,8 +25,9 @@ import { PaymentsSyncScheduler } from './payments-sync.scheduler'
     AsaasGateway,
     MercadoPagoGateway,
     LivePixGateway,
+    StripeGateway,
     PaymentsSyncScheduler,
   ],
-  exports: [PaymentsService, CheckoutService, MercadoPagoGateway, LivePixGateway],
+  exports: [PaymentsService, CheckoutService, MercadoPagoGateway, LivePixGateway, StripeGateway],
 })
 export class PaymentsModule {}
