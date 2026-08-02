@@ -323,17 +323,25 @@ export class CheckoutService {
 
     this.logger.log(`Iniciando checkout Stripe [${params.billingType}] para ${params.originType}:${params.originId}`)
 
-    const checkout = await this.stripe.createCheckoutSession({
-      amount: plan.amount,
-      currency: plan.currency ?? 'BRL',
-      description: `${product.name} — ${plan.name}`,
-      billingType: params.billingType,
-      customerEmail: customer.email,
-      successUrl: `${returnUrl}${returnUrl.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: returnUrl,
-      externalReference: `${params.originType}:${params.originId}`,
-      installments: params.installmentCount,
-    })
+    let checkout: Awaited<ReturnType<StripeGateway['createCheckoutSession']>>
+    try {
+      checkout = await this.stripe.createCheckoutSession({
+        amount: plan.amount,
+        currency: plan.currency ?? 'BRL',
+        description: `${product.name} — ${plan.name}`,
+        billingType: params.billingType,
+        customerEmail: customer.email,
+        successUrl: `${returnUrl}${returnUrl.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: returnUrl,
+        externalReference: `${params.originType}:${params.originId}`,
+        installments: params.installmentCount,
+      })
+    } catch (err: any) {
+      // Converte para 400: um 502 seria interceptado pelo reverse proxy e
+      // substituído por HTML, escondendo a mensagem real (ex: método de
+      // pagamento não ativado na conta Stripe) da tela do admin.
+      throw new BadRequestException(err?.message ?? 'Falha ao criar checkout na Stripe')
+    }
 
     const invoice = await this.repo.findInvoiceByOrigin(params.originType, params.originId)
     const localCharge = await this.repo.createCharge({
