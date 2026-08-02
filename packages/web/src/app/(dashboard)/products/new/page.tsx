@@ -13,13 +13,18 @@ import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 import { ArrowLeft } from 'lucide-react'
 
+const gatewayOptionValues = ['', 'asaas', 'mercadopago', 'livepix', 'stripe'] as const
+
 const schema = z.object({
   code:        z.string().min(2, 'Código obrigatório').regex(/^[A-Z0-9_-]+$/, 'Apenas letras maiúsculas, números e _-'),
   name:        z.string().min(2, 'Nome obrigatório'),
   description: z.string().optional(),
   billingType: z.enum(['recurring', 'one_time', 'hybrid']),
   isActive:    z.boolean().default(true),
-  gatewayName: z.enum(['', 'asaas', 'mercadopago', 'livepix', 'stripe']).optional(),
+  gatewayName: z.enum(gatewayOptionValues).optional(),
+  gatewayRoutingPix: z.enum(gatewayOptionValues).optional(),
+  gatewayRoutingCard: z.enum(gatewayOptionValues).optional(),
+  gatewayRoutingBoleto: z.enum(gatewayOptionValues).optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -37,11 +42,16 @@ export default function NewProductPage() {
 
   const mutation = useMutation({
     mutationFn: (data: FormData) => {
-      const { gatewayName, ...rest } = data
+      const { gatewayName, gatewayRoutingPix, gatewayRoutingCard, gatewayRoutingBoleto, ...rest } = data
+      const gatewayRouting: Record<string, string> = {}
+      if (gatewayRoutingPix) gatewayRouting.PIX = gatewayRoutingPix
+      if (gatewayRoutingCard) gatewayRouting.CREDIT_CARD = gatewayRoutingCard
+      if (gatewayRoutingBoleto) gatewayRouting.BOLETO = gatewayRoutingBoleto
       return api.post('/products', {
         ...rest,
         status: data.isActive ? 'active' : 'inactive',
         gatewayName: gatewayName || undefined,
+        ...(Object.keys(gatewayRouting).length > 0 ? { gatewayRouting } : {}),
       })
     },
     onSuccess: (res) => router.push(`/products/${res.data.id}`),
@@ -129,6 +139,51 @@ export default function NewProductPage() {
             <p className="text-xs text-gray-500 -mt-2">
               Roteia as cobranças deste produto para um gateway específico, independente do gateway ativo global.
             </p>
+
+            <div className="pt-2 border-t border-gray-100">
+              <p className="text-sm font-medium text-gray-700">Personalizar por método de pagamento (opcional)</p>
+              <p className="text-xs text-gray-500 mb-3">
+                Quando definido, o método escolhido no checkout usa esse gateway específico — ignora o padrão acima.
+              </p>
+              <div className="space-y-3">
+                <Select
+                  id="gatewayRoutingPix"
+                  label="PIX"
+                  placeholder="Usar gateway padrão"
+                  options={[
+                    { value: 'asaas', label: 'Asaas' },
+                    { value: 'mercadopago', label: 'Mercado Pago' },
+                    { value: 'livepix', label: 'LivePix' },
+                    { value: 'stripe', label: 'Stripe' },
+                  ]}
+                  {...register('gatewayRoutingPix')}
+                />
+                <Select
+                  id="gatewayRoutingCard"
+                  label="Cartão de Crédito"
+                  placeholder="Usar gateway padrão"
+                  options={[
+                    { value: 'asaas', label: 'Asaas' },
+                    { value: 'mercadopago', label: 'Mercado Pago' },
+                    { value: 'livepix', label: 'LivePix' },
+                    { value: 'stripe', label: 'Stripe' },
+                  ]}
+                  {...register('gatewayRoutingCard')}
+                />
+                <Select
+                  id="gatewayRoutingBoleto"
+                  label="Boleto"
+                  placeholder="Usar gateway padrão"
+                  options={[
+                    { value: 'asaas', label: 'Asaas' },
+                    { value: 'mercadopago', label: 'Mercado Pago' },
+                    { value: 'livepix', label: 'LivePix' },
+                    { value: 'stripe', label: 'Stripe' },
+                  ]}
+                  {...register('gatewayRoutingBoleto')}
+                />
+              </div>
+            </div>
 
             <div className="flex items-center gap-3">
               <button
