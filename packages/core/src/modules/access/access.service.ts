@@ -213,8 +213,18 @@ export class AccessService {
 
     if (activeLicense) {
       const isPaidLicense = activeLicense.originType !== 'trial'
+      // Nada expira o status='active' no banco por tempo — só webhooks de
+      // pagamento (suspended) ou revogação manual. Sem essa checagem, uma
+      // licença/trial vencido continua concedendo acesso para sempre.
+      const isExpiredByDate = !!activeLicense.expiresAt && dayjs(activeLicense.expiresAt).isBefore(dayjs())
 
       // Licença paga ativa
+      if (isPaidLicense && activeLicense.status === 'active' && isExpiredByDate) {
+        return this.buildResponse(customer.id, dto.productId, activeLicense.id, 'blocked', 'license_expired', {
+          licenseEndAt: activeLicense.expiresAt?.toISOString() ?? null,
+        })
+      }
+
       if (isPaidLicense && activeLicense.status === 'active') {
         const daysLeft = activeLicense.expiresAt
           ? Math.max(0, dayjs(activeLicense.expiresAt).diff(dayjs(), 'day'))
@@ -267,6 +277,14 @@ export class AccessService {
           }
         }
         return this.buildResponse(customer.id, dto.productId, activeLicense.id, 'blocked', 'license_suspended', null)
+      }
+
+      // Trial vencido mas ainda com status='active' no banco — cai no mesmo
+      // bloqueio que o caminho "trial já usado" logo abaixo trataria.
+      if (!isPaidLicense && activeLicense.status === 'active' && isExpiredByDate) {
+        return this.buildResponse(customer.id, dto.productId, activeLicense.id, 'blocked', 'trial_expired', {
+          trialEndAt: activeLicense.expiresAt?.toISOString() ?? null,
+        })
       }
 
       // Trial ativo
@@ -407,6 +425,30 @@ export class AccessService {
 
     if (activeLicense) {
       const isPaid = activeLicense.originType !== 'trial'
+      // Ver comentário equivalente em resolveAccess(): status='active' no
+      // banco nunca expira sozinho por tempo — sem isso, quem passa da data
+      // continua com canAccess=true indefinidamente.
+      const isExpiredByDate = !!activeLicense.expiresAt && dayjs(activeLicense.expiresAt).isBefore(dayjs())
+
+      if (activeLicense.status === 'active' && isExpiredByDate) {
+        return this.cacheStatus(
+          cacheKey,
+          this.buildStatusResponse(
+            customerId,
+            productId,
+            activeLicense.id,
+            'blocked',
+            false,
+            isPaid ? null : activeLicense.expiresAt?.toISOString() ?? null,
+            isPaid ? activeLicense.expiresAt?.toISOString() ?? null : null,
+            0,
+            isPaid ? 'license_expired' : 'trial_expired',
+            isPaid
+              ? 'Sua licença expirou. Regularize o pagamento para continuar.'
+              : 'Seu período de avaliação expirou. Adquira uma licença para continuar.',
+          ),
+        )
+      }
 
       if (activeLicense.status === 'revoked') {
         return this.cacheStatus(
@@ -590,13 +632,14 @@ export class AccessService {
     licenseId: string | null,
     accessStatus: AccessStatus,
     reason: string,
-    extra: { trialEndAt?: string | null } | null,
+    extra: { trialEndAt?: string | null; licenseEndAt?: string | null } | null,
   ): ResolveAccessResponseDto {
     const banners: Record<string, string> = {
       blocked: 'Acesso bloqueado. Entre em contato com o suporte.',
       trial_expired: 'Seu período de avaliação expirou. Adquira uma licença para continuar.',
       customer_blocked: 'Sua conta está bloqueada. Entre em contato com o suporte.',
       license_suspended: 'Sua licença está suspensa. Regularize o pagamento para continuar.',
+      license_expired: 'Sua licença expirou. Regularize o pagamento para continuar.',
       no_license: 'Produto não disponível. Entre em contato para adquirir uma licença.',
       product_not_found: 'Produto não encontrado.',
     }
@@ -608,7 +651,7 @@ export class AccessService {
       accessStatus,
       trialStartedAt: null,
       trialEndAt: extra?.trialEndAt ?? null,
-      licenseEndAt: null,
+      licenseEndAt: extra?.licenseEndAt ?? null,
       daysLeft: null,
       planCode: null,
       planName: null,
