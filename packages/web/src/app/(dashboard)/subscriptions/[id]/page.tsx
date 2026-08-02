@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Modal } from '@/components/ui/Modal'
 import { Spinner } from '@/components/ui/Spinner'
-import { ArrowLeft, CreditCard, XCircle, RefreshCw } from 'lucide-react'
+import { ArrowLeft, CreditCard, XCircle, RefreshCw, Repeat } from 'lucide-react'
 import { CheckoutResult, type CheckoutResultData } from '@/components/payments/CheckoutResult'
 import { ChargesSection } from '@/components/payments/ChargesSection'
 
@@ -79,6 +79,31 @@ type ChangePlanFormData = z.infer<typeof changePlanSchema>
 
 interface Plan { id: string; name: string; amount: number }
 
+// Domínios de checkout hospedado dos gateways que suportam cartão via redirect
+// (Mercado Pago, Stripe, LivePix) — evita open redirect para qualquer outro host.
+const ALLOWED_CHECKOUT_HOSTS = [
+  'mercadopago.com', 'mercadopago.com.br', 'www.mercadopago.com.br', 'www.mercadopago.com',
+  'checkout.stripe.com',
+  'checkout.livepix.gg',
+]
+
+function openHostedCheckoutUrl(redirectUrl: string | null | undefined, onError: (message: string) => void): void {
+  if (!redirectUrl) {
+    onError('Não foi possível obter URL do checkout hospedado.')
+    return
+  }
+  try {
+    const parsed = new URL(redirectUrl)
+    if (!ALLOWED_CHECKOUT_HOSTS.some((host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`))) {
+      onError('URL de redirecionamento inválida para checkout.')
+      return
+    }
+    window.location.href = redirectUrl
+  } catch {
+    onError('URL de redirecionamento inválida para checkout.')
+  }
+}
+
 export default function SubscriptionDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -130,31 +155,8 @@ export default function SubscriptionDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['charges', 'subscription', id] })
       setShowCheckoutModal(false)
       if (variables.billingType === 'CREDIT_CARD') {
-        const redirectUrl = data?.checkoutUrl
-        if (!redirectUrl) {
-          setActionError('Não foi possível obter URL do checkout hospedado.')
-          return
-        }
-        try {
-          const parsed = new URL(redirectUrl)
-          // Domínios de checkout hospedado dos gateways que suportam cartão via
-          // redirect (Mercado Pago, Stripe, LivePix) — evita open redirect para
-          // qualquer outro host.
-          const allowedHosts = [
-            'mercadopago.com', 'mercadopago.com.br', 'www.mercadopago.com.br', 'www.mercadopago.com',
-            'checkout.stripe.com',
-            'checkout.livepix.gg',
-          ]
-          if (!allowedHosts.some((host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`))) {
-            setActionError('URL de redirecionamento inválida para checkout.')
-            return
-          }
-          window.location.href = redirectUrl
-          return
-        } catch {
-          setActionError('URL de redirecionamento inválida para checkout.')
-          return
-        }
+        openHostedCheckoutUrl(data?.checkoutUrl, setActionError)
+        return
       }
       setCheckoutResult(data)
     },
@@ -164,6 +166,17 @@ export default function SubscriptionDetailPage() {
   const submitCheckout = checkoutForm.handleSubmit((data) => {
     setActionError('')
     checkoutMutation.mutate(data)
+  })
+
+  // Recorrência nativa do gateway (hoje só a Stripe): o cliente cadastra o
+  // cartão uma vez no checkout hospedado e o gateway cobra sozinho todo ciclo.
+  const recurringCheckoutMutation = useMutation({
+    mutationFn: () => api.post(`/subscriptions/${id}/recurring-checkout`),
+    onSuccess: ({ data }) => {
+      setActionError('')
+      openHostedCheckoutUrl(data?.checkoutUrl, setActionError)
+    },
+    onError: (err: any) => setActionError(err?.response?.data?.message ?? 'Erro ao ativar cobrança recorrente'),
   })
 
   const changePlanMutation = useMutation({
@@ -202,6 +215,15 @@ export default function SubscriptionDetailPage() {
             <>
               <Button variant="outline" size="sm" onClick={() => setShowCheckoutModal(true)}>
                 <CreditCard size={14} /> Cobrar
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => recurringCheckoutMutation.mutate()}
+                loading={recurringCheckoutMutation.isPending}
+                title="Cliente cadastra o cartão uma vez; o gateway cobra sozinho todo ciclo (hoje só Stripe)."
+              >
+                <Repeat size={14} /> Ativar Recorrência
               </Button>
               <Button variant="secondary" size="sm" onClick={() => setShowChangePlanModal(true)}>
                 <RefreshCw size={14} /> Trocar Plano

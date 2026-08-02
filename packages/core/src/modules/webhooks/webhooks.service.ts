@@ -140,6 +140,30 @@ export class WebhookProcessorService extends WorkerHost {
         await this.subscriptions.cancelByExternal(payload.externalSubscriptionId)
         break
 
+      // ── Recorrência nativa do gateway (ex: Stripe Subscriptions) ─────────
+      // Vincula o id externo assim que o Checkout Session de assinatura é
+      // concluído — precisa acontecer antes do primeiro subscription.renewed.
+      case 'subscription.linked':
+        await this.subscriptions.linkExternalSubscription(
+          String(payload?.externalReference ?? ''),
+          String(payload?.externalSubscriptionId ?? ''),
+          'stripe',
+        )
+        break
+
+      // Cobrança do ciclo confirmada no cartão salvo (1º ciclo ou renovação).
+      case 'subscription.renewed': {
+        const periodStart = payload?.periodStart ? new Date(Number(payload.periodStart) * 1000) : new Date()
+        const periodEnd = payload?.periodEnd ? new Date(Number(payload.periodEnd) * 1000) : periodStart
+        await this.subscriptions.activateByExternal(String(payload?.externalSubscriptionId ?? ''), periodStart, periodEnd)
+        break
+      }
+
+      // Cobrança do ciclo recusada no cartão salvo.
+      case 'subscription.payment_failed':
+        await this.subscriptions.markOverdueByExternal(String(payload?.externalSubscriptionId ?? ''))
+        break
+
       // ── Chargeback ───────────────────────────────────────────────────────
       case 'payment.chargeback':
         await this.invoices.handleChargeback(payload.chargeId)
@@ -265,11 +289,24 @@ export class WebhooksController {
     // externalChargeId no checkout (correlação direta, como na LivePix).
     if (provider === 'stripe') {
       const stripeType = String(body?.type ?? '')
-      const obj = (body?.data?.object ?? {}) as { id?: string; client_reference_id?: string }
+      const obj = (body?.data?.object ?? {}) as {
+        id?: string
+        client_reference_id?: string
+        mode?: string
+        subscription?: string
+        period_start?: number
+        period_end?: number
+      }
       const objId = String(obj.id ?? '')
       const externalReference = String(obj.client_reference_id ?? '')
 
-      if (stripeType === 'checkout.session.completed') {
+      if (stripeType === 'checkout.session.completed' && obj.mode === 'subscription') {
+        // Recorrência nativa: aqui só vinculamos o external_subscription_id à
+        // assinatura interna (via client_reference_id) — quem ativa de fato é o
+        // invoice.paid logo em seguida, que já traz o período de cobrança certo.
+        eventType = 'subscription.linked'
+        payload = { ...body, externalReference, externalSubscriptionId: String(obj.subscription ?? '') }
+      } else if (stripeType === 'checkout.session.completed') {
         eventType = 'payment.approved'
         payload = { ...body, chargeId: objId, externalReference }
       } else if (stripeType === 'checkout.session.expired') {
@@ -278,6 +315,18 @@ export class WebhooksController {
       } else if (stripeType === 'customer.subscription.deleted') {
         eventType = 'subscription.canceled'
         payload = { ...body, externalSubscriptionId: objId }
+      } else if (stripeType === 'invoice.paid') {
+        // Cobrança automática do ciclo (1º ou renovação) no cartão salvo.
+        eventType = 'subscription.renewed'
+        payload = {
+          ...body,
+          externalSubscriptionId: String(obj.subscription ?? ''),
+          periodStart: obj.period_start ?? null,
+          periodEnd: obj.period_end ?? null,
+        }
+      } else if (stripeType === 'invoice.payment_failed') {
+        eventType = 'subscription.payment_failed'
+        payload = { ...body, externalSubscriptionId: String(obj.subscription ?? '') }
       } else {
         eventType = stripeType || 'unknown'
       }

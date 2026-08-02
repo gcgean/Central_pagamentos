@@ -297,9 +297,11 @@ export class SettingsController {
         webhookUrl,
         webhookId: result.id,
         secretSaved: !!result.secret,
-        message: result.alreadyRegistered
-          ? 'Webhook já estava registrado na Stripe.'
-          : 'Webhook registrado na Stripe e signing secret salvo automaticamente.',
+        message: !result.alreadyRegistered
+          ? 'Webhook registrado na Stripe e signing secret salvo automaticamente.'
+          : result.eventsUpdated
+            ? 'Webhook já registrado — lista de eventos atualizada com os novos eventos necessários.'
+            : 'Webhook já estava registrado na Stripe.',
       }
     } catch (err: any) {
       throw new BadRequestException(err?.message ?? 'Falha ao registrar webhook na Stripe')

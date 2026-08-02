@@ -215,6 +215,50 @@ export class SubscriptionsService {
     await this.cancel(sub.id, 'Cancelado pelo gateway', false)
   }
 
+  // ── Recorrência nativa do gateway (ex: Stripe Subscriptions) ────────────────
+  //
+  // Vincula a assinatura interna ao id de assinatura do gateway, a partir do
+  // client_reference_id do Checkout Session ("subscription:<id>"). É o único
+  // momento em que a ligação existe — depois disso, activateByExternal e
+  // markOverdueByExternal já encontram a assinatura por external_subscription_id.
+  async linkExternalSubscription(
+    externalReference: string,
+    externalSubscriptionId: string,
+    gatewayName: string,
+  ): Promise<void> {
+    const [originType, ...rest] = String(externalReference || '').split(':')
+    const subscriptionId = rest.join(':')
+    if (originType !== 'subscription' || !subscriptionId) {
+      this.logger.warn(`externalReference inválida para vincular assinatura ao gateway: "${externalReference}"`)
+      return
+    }
+    await this.repo.update(subscriptionId, { externalSubscriptionId, gatewayName } as Partial<Subscription>)
+    this.logger.log(`Assinatura ${subscriptionId} vinculada ao gateway ${gatewayName} (external: ${externalSubscriptionId})`)
+  }
+
+  /**
+   * Ativa/renova a assinatura a partir do id externo (webhook de fatura paga).
+   * Lança quando o vínculo externo ainda não existe, para que o BullMQ tente
+   * de novo — cobre o caso raro do webhook de fatura chegar antes do webhook
+   * que vincula o external_subscription_id (checkout.session.completed).
+   */
+  async activateByExternal(externalId: string, periodStart: Date, periodEnd: Date): Promise<void> {
+    const sub = await this.repo.findByExternalId(externalId)
+    if (!sub) {
+      throw new NotFoundException(`Assinatura externa ainda não vinculada: ${externalId}`)
+    }
+    await this.activate(sub.id, periodStart, periodEnd)
+  }
+
+  /** Marca em atraso a partir do id externo (webhook de fatura com cobrança recusada). */
+  async markOverdueByExternal(externalId: string): Promise<void> {
+    const sub = await this.repo.findByExternalId(externalId)
+    if (!sub) {
+      throw new NotFoundException(`Assinatura externa ainda não vinculada: ${externalId}`)
+    }
+    await this.markOverdue(sub.id)
+  }
+
   async findById(id: string): Promise<Subscription> {
     const sub = await this.repo.findById(id)
     if (!sub) throw new NotFoundException(`Assinatura ${id} não encontrada`)

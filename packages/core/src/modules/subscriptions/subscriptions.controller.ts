@@ -129,6 +129,29 @@ export class SubscriptionsController {
     )
   }
 
+  @Post(':id/recurring-checkout')
+  @Roles('super_admin', 'financial', 'operations')
+  @ApiOperation({
+    summary: 'Ativar cobrança recorrente nativa do gateway (ex: Stripe Subscriptions)',
+    description:
+      'Gera um checkout onde o cliente cadastra o cartão uma vez; a partir daí o próprio gateway cobra ' +
+      'automaticamente todo ciclo, sem precisar gerar um novo link a cada cobrança. Hoje só a Stripe suporta ' +
+      'esse fluxo neste Hub — os demais gateways seguem no modelo de cobrança avulsa por ciclo (endpoint /checkout).',
+  })
+  createRecurringCheckout(
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.service.findById(id).then(sub =>
+      this.checkout.createRecurringSubscription({
+        customerId: sub.customerId,
+        productId: sub.productId,
+        planId: sub.planId,
+        subscriptionId: id,
+        billingType: 'CREDIT_CARD',
+      })
+    )
+  }
+
   @Patch(':id/cancel')
   @Roles('super_admin', 'financial', 'operations')
   @AuditAction('subscription.cancel')

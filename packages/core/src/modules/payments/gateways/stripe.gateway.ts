@@ -17,6 +17,11 @@ const WEBHOOK_EVENTS: Stripe.WebhookEndpointCreateParams.EnabledEvent[] = [
   'checkout.session.expired',
   'customer.subscription.deleted',
   'charge.refunded',
+  // Recorrência nativa (Stripe Subscriptions): cada ciclo cobrado automaticamente
+  // no cartão salvo dispara invoice.paid; falha de cobrança dispara
+  // invoice.payment_failed.
+  'invoice.paid',
+  'invoice.payment_failed',
 ]
 
 // ─── Adapter ─────────────────────────────────────────────────────────────────
@@ -224,13 +229,29 @@ export class StripeGateway {
     return { id: created.id, secret: created.secret }
   }
 
-  /** Registra o webhook evitando duplicar; retorna o secret só quando cria um novo. */
-  async ensureWebhookEndpoint(url: string): Promise<{ id: string; secret?: string; alreadyRegistered: boolean }> {
+  /**
+   * Registra o webhook evitando duplicar. Se já existir um endpoint para essa
+   * URL, atualiza a lista de eventos habilitados caso falte algum dos que
+   * usamos hoje (ex: quando novos eventos passam a ser necessários após um
+   * registro anterior) — sem isso, o endpoint ficaria "preso" na lista antiga.
+   * O secret só é retornado quando cria um endpoint novo (a Stripe não o
+   * revela de novo depois).
+   */
+  async ensureWebhookEndpoint(url: string): Promise<{ id: string; secret?: string; alreadyRegistered: boolean; eventsUpdated: boolean }> {
     const endpoints = await this.listWebhookEndpoints()
     const found = endpoints.find(w => w.url === url)
-    if (found) return { id: found.id, alreadyRegistered: true }
+    if (found) {
+      const currentEvents = new Set(found.enabled_events as string[])
+      const missing = WEBHOOK_EVENTS.filter(e => !currentEvents.has(e))
+      if (missing.length > 0) {
+        await this.client.webhookEndpoints.update(found.id, { enabled_events: WEBHOOK_EVENTS })
+        this.logger.log(`Stripe webhook endpoint ${found.id} atualizado com novos eventos: ${missing.join(', ')}`)
+        return { id: found.id, alreadyRegistered: true, eventsUpdated: true }
+      }
+      return { id: found.id, alreadyRegistered: true, eventsUpdated: false }
+    }
     const created = await this.createWebhookEndpoint(url)
-    return { id: created.id, secret: created.secret, alreadyRegistered: false }
+    return { id: created.id, secret: created.secret, alreadyRegistered: false, eventsUpdated: false }
   }
 
   // ─── Mapeamentos ────────────────────────────────────────────────────────────

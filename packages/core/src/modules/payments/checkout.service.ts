@@ -604,17 +604,24 @@ export class CheckoutService {
       const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
       const returnUrl = `${appUrl}/subscriptions/${params.subscriptionId}`
 
-      const checkout = await this.stripe.createSubscriptionCheckout({
-        amount: plan.amount,
-        currency: plan.currency ?? 'BRL',
-        description: `${product.name} — ${plan.name}`,
-        intervalUnit: plan.intervalUnit,
-        intervalCount: plan.intervalCount,
-        customerEmail: customer.email,
-        successUrl: `${returnUrl}?session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: returnUrl,
-        externalReference: `subscription:${params.subscriptionId}`,
-      })
+      let checkout: Awaited<ReturnType<StripeGateway['createSubscriptionCheckout']>>
+      try {
+        checkout = await this.stripe.createSubscriptionCheckout({
+          amount: plan.amount,
+          currency: plan.currency ?? 'BRL',
+          description: `${product.name} — ${plan.name}`,
+          intervalUnit: plan.intervalUnit,
+          intervalCount: plan.intervalCount,
+          customerEmail: customer.email,
+          successUrl: `${returnUrl}?session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: returnUrl,
+          externalReference: `subscription:${params.subscriptionId}`,
+        })
+      } catch (err: any) {
+        // 400 em vez de 502: evita que o reverse proxy substitua a mensagem
+        // real da Stripe por uma página HTML genérica.
+        throw new BadRequestException(err?.message ?? 'Falha ao criar checkout de assinatura na Stripe')
+      }
 
       return {
         externalSubscriptionId: checkout.id,
