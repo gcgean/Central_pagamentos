@@ -52,6 +52,12 @@ class CreateCheckoutDto {
   returnUrl?: string
 }
 
+class CreateRecurringCheckoutDto {
+  @ApiPropertyOptional({ description: 'URL de retorno pós-pagamento (ex: página de assinatura do sistema satélite). Padrão: painel do Hub.' })
+  @IsOptional() @IsString()
+  returnUrl?: string
+}
+
 class CreateOrderDto {
   @ApiProperty() @IsUUID() customerId: string
   @ApiProperty() @IsUUID() productId: string
@@ -140,6 +146,7 @@ export class SubscriptionsController {
   })
   createRecurringCheckout(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateRecurringCheckoutDto,
   ) {
     return this.service.findById(id).then(sub =>
       this.checkout.createRecurringSubscription({
@@ -148,6 +155,7 @@ export class SubscriptionsController {
         planId: sub.planId,
         subscriptionId: id,
         billingType: 'CREDIT_CARD',
+        returnUrl: dto?.returnUrl,
       })
     )
   }

@@ -532,6 +532,7 @@ export class CheckoutService {
     planId: string
     subscriptionId: string
     billingType: 'PIX' | 'CREDIT_CARD' | 'BOLETO'
+    returnUrl?: string
   }) {
     const customer = await this.customers.findById(params.customerId)
     const plan     = await this.plans.findById(params.planId)
@@ -540,6 +541,14 @@ export class CheckoutService {
     const gwConfig = await this.settingsService.getGatewayConfig()
     const methodOverride = (product.gatewayRouting as Record<string, string> | null)?.[params.billingType]
     const activeGateway = methodOverride ?? product.gatewayName ?? gwConfig.activeGateway
+
+    const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
+    // Redirect pós-pagamento: prioriza a URL informada pelo sistema satélite
+    // (ex: NoSigilo). Só aceita http(s); senão cai no endereço do próprio Hub.
+    const fallbackReturnUrl = `${appUrl}/subscriptions/${params.subscriptionId}`
+    const redirectUrl = params.returnUrl && /^https?:\/\//i.test(params.returnUrl.trim())
+      ? params.returnUrl.trim()
+      : fallbackReturnUrl
 
     if (activeGateway === 'mercadopago') {
       if (!gwConfig.mercadopago.isConfigured) {
@@ -555,6 +564,7 @@ export class CheckoutService {
         intervalCount:  plan.intervalCount,
         description:    `${product.name} — ${plan.name}`,
         externalReference: `subscription:${params.subscriptionId}`,
+        backUrl: redirectUrl,
       })
 
       return {
@@ -571,7 +581,6 @@ export class CheckoutService {
       this.livepix.setCredentials(gwConfig.livepix.clientId, gwConfig.livepix.clientSecret, gwConfig.livepix.scope)
 
       const recurrence = LivePixGateway.intervalToRecurrence(plan.intervalUnit, plan.intervalCount)
-      const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
 
       const plan_ = await this.livepix.createOrFindPlan({
         slug: `${product.code}-${plan.code}`.toLowerCase(),
@@ -584,7 +593,7 @@ export class CheckoutService {
         planId: plan_.id,
         recurrence,
         subscriber: { email: customer.email },
-        redirectUrl: `${appUrl}/subscriptions/${params.subscriptionId}`,
+        redirectUrl,
       })
 
       return {
@@ -601,9 +610,6 @@ export class CheckoutService {
       }
       this.stripe.setCredentials(gwConfig.stripe.secretKey, gwConfig.stripe.webhookSecret)
 
-      const appUrl = (this.config.get<string>('app.url', 'http://localhost:3005') || 'http://localhost:3005').replace(/\/$/, '')
-      const returnUrl = `${appUrl}/subscriptions/${params.subscriptionId}`
-
       let checkout: Awaited<ReturnType<StripeGateway['createSubscriptionCheckout']>>
       try {
         checkout = await this.stripe.createSubscriptionCheckout({
@@ -613,8 +619,8 @@ export class CheckoutService {
           intervalUnit: plan.intervalUnit,
           intervalCount: plan.intervalCount,
           customerEmail: customer.email,
-          successUrl: `${returnUrl}?session_id={CHECKOUT_SESSION_ID}`,
-          cancelUrl: returnUrl,
+          successUrl: `${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: redirectUrl,
           externalReference: `subscription:${params.subscriptionId}`,
         })
       } catch (err: any) {
