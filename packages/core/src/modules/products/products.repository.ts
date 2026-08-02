@@ -9,7 +9,7 @@ export class ProductsRepository {
 
   async create(data: any) {
     const [row] = await this.sql`
-      INSERT INTO products (code, name, description, billing_type, status, trial_days, gateway_name)
+      INSERT INTO products (code, name, description, billing_type, status, trial_days, gateway_name, gateway_routing)
       VALUES (
         ${data.code},
         ${data.name},
@@ -17,7 +17,8 @@ export class ProductsRepository {
         ${data.billingType ?? 'recurring'},
         ${data.status ?? (data.isActive === false ? 'inactive' : 'active')}::product_status,
         ${data.trialDays ?? 0},
-        ${data.gatewayName ?? null}
+        ${data.gatewayName ?? null},
+        ${data.gatewayRouting ?? null}
       )
       RETURNING *
     `
@@ -48,6 +49,10 @@ export class ProductsRepository {
     // por isso usa CASE (campo enviado) em vez de COALESCE (que nunca zeraria o valor).
     const gatewayNameProvided = Object.prototype.hasOwnProperty.call(data, 'gatewayName')
     const gatewayNameValue = data.gatewayName ?? null
+    // Mesmo raciocínio do gateway_name: precisa aceitar null explícito para
+    // remover os overrides por método de pagamento.
+    const gatewayRoutingProvided = Object.prototype.hasOwnProperty.call(data, 'gatewayRouting')
+    const gatewayRoutingValue = data.gatewayRouting ?? null
 
     const [row] = await this.sql`
       UPDATE products SET
@@ -57,6 +62,7 @@ export class ProductsRepository {
         status       = COALESCE(${newStatus ?? null}::product_status, status),
         trial_days   = COALESCE(${data.trialDays ?? null}, trial_days),
         gateway_name = CASE WHEN ${gatewayNameProvided} THEN ${gatewayNameValue} ELSE gateway_name END,
+        gateway_routing = CASE WHEN ${gatewayRoutingProvided} THEN ${gatewayRoutingValue}::jsonb ELSE gateway_routing END,
         updated_at   = NOW()
       WHERE id = ${id}
       RETURNING *
@@ -75,6 +81,7 @@ export class ProductsRepository {
       isActive:    row.status === 'active',
       trialDays:   row.trial_days ?? 0,
       gatewayName: row.gateway_name ?? null,
+      gatewayRouting: row.gateway_routing ?? null,
       createdAt:   row.created_at,
       updatedAt:   row.updated_at,
     }

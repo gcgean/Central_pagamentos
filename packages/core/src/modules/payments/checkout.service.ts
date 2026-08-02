@@ -56,11 +56,18 @@ export class CheckoutService {
       throw new BadRequestException('Plano não está disponível para contratação')
     }
 
-    // Resolve gateway: produto (override por produto) > gateway ativo global (DB > env)
+    // Resolve gateway: override por método de pagamento (produto) > gateway do
+    // produto > gateway ativo global (DB > env).
     const gwConfig = await this.settingsService.getGatewayConfig()
-    const activeGateway = product.gatewayName ?? gwConfig.activeGateway
+    const methodOverride = (product.gatewayRouting as Record<string, string> | null)?.[params.billingType]
+    const activeGateway = methodOverride ?? product.gatewayName ?? gwConfig.activeGateway
 
-    this.logger.log(`Checkout via gateway: ${activeGateway}${product.gatewayName ? ' (override do produto)' : ''}`)
+    const originLabel = methodOverride
+      ? ` (override do produto para ${params.billingType})`
+      : product.gatewayName
+        ? ' (override do produto)'
+        : ''
+    this.logger.log(`Checkout via gateway: ${activeGateway}${originLabel}`)
 
     if (activeGateway === 'mercadopago') {
       return this.createMercadoPagoCheckout(params, plan, product, customer, gwConfig)
@@ -530,8 +537,9 @@ export class CheckoutService {
     const plan     = await this.plans.findById(params.planId)
     const product  = await this.products.findById(params.productId)
 
-    const gwConfig      = await this.settingsService.getGatewayConfig()
-    const activeGateway = product.gatewayName ?? gwConfig.activeGateway
+    const gwConfig = await this.settingsService.getGatewayConfig()
+    const methodOverride = (product.gatewayRouting as Record<string, string> | null)?.[params.billingType]
+    const activeGateway = methodOverride ?? product.gatewayName ?? gwConfig.activeGateway
 
     if (activeGateway === 'mercadopago') {
       if (!gwConfig.mercadopago.isConfigured) {

@@ -17,13 +17,16 @@ import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ArrowLeft, Plus, Archive, Package, Pencil, Power } from 'lucide-react'
 
+type GatewayId = 'asaas' | 'mercadopago' | 'livepix' | 'stripe'
+
 interface Product {
   id: string
   code: string
   name: string
   description?: string
   trialDays?: number
-  gatewayName?: 'asaas' | 'mercadopago' | 'livepix' | 'stripe' | null
+  gatewayName?: GatewayId | null
+  gatewayRouting?: Partial<Record<'PIX' | 'CREDIT_CARD' | 'BOLETO', GatewayId>> | null
   isActive: boolean
   createdAt: string
 }
@@ -58,9 +61,14 @@ const planSchema = z.object({
 
 type PlanFormData = z.infer<typeof planSchema>
 
+const gatewayOptionValues = ['', 'asaas', 'mercadopago', 'livepix', 'stripe'] as const
+
 const productSchema = z.object({
   trialDays: z.coerce.number().int().min(0, 'Dias de trial deve ser maior ou igual a 0'),
-  gatewayName: z.enum(['', 'asaas', 'mercadopago', 'livepix', 'stripe']).optional(),
+  gatewayName: z.enum(gatewayOptionValues).optional(),
+  gatewayRoutingPix: z.enum(gatewayOptionValues).optional(),
+  gatewayRoutingCard: z.enum(gatewayOptionValues).optional(),
+  gatewayRoutingBoleto: z.enum(gatewayOptionValues).optional(),
 })
 
 const gatewayLabels: Record<string, string> = {
@@ -71,6 +79,16 @@ const gatewayLabels: Record<string, string> = {
 }
 
 type ProductFormData = z.infer<typeof productSchema>
+
+function productFormValues(product?: Product | null): ProductFormData {
+  return {
+    trialDays: product?.trialDays ?? 0,
+    gatewayName: product?.gatewayName ?? '',
+    gatewayRoutingPix: product?.gatewayRouting?.PIX ?? '',
+    gatewayRoutingCard: product?.gatewayRouting?.CREDIT_CARD ?? '',
+    gatewayRoutingBoleto: product?.gatewayRouting?.BOLETO ?? '',
+  }
+}
 
 const intervalLabels: Record<string, string> = {
   day: 'Diario',
@@ -141,7 +159,7 @@ export default function ProductDetailPage() {
     formState: { errors: productFormErrors },
   } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
-    defaultValues: { trialDays: product?.trialDays ?? 0, gatewayName: product?.gatewayName ?? '' },
+    defaultValues: productFormValues(product),
   })
 
   const createPlanMutation = useMutation({
@@ -197,10 +215,17 @@ export default function ProductDetailPage() {
   })
 
   const updateProductMutation = useMutation({
-    mutationFn: (data: ProductFormData) => api.put(`/products/${id}`, {
-      trialDays: Number(data.trialDays),
-      gatewayName: data.gatewayName || null,
-    }),
+    mutationFn: (data: ProductFormData) => {
+      const gatewayRouting: Record<string, string> = {}
+      if (data.gatewayRoutingPix) gatewayRouting.PIX = data.gatewayRoutingPix
+      if (data.gatewayRoutingCard) gatewayRouting.CREDIT_CARD = data.gatewayRoutingCard
+      if (data.gatewayRoutingBoleto) gatewayRouting.BOLETO = data.gatewayRoutingBoleto
+      return api.put(`/products/${id}`, {
+        trialDays: Number(data.trialDays),
+        gatewayName: data.gatewayName || null,
+        gatewayRouting,
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['product', id] })
       setShowEditProductModal(false)
@@ -260,6 +285,14 @@ export default function ProductDetailPage() {
             <p className="text-sm text-gray-500 mt-1">
               Gateway: {product.gatewayName ? gatewayLabels[product.gatewayName] ?? product.gatewayName : 'Padrão (Configurações)'}
             </p>
+            {product.gatewayRouting && Object.keys(product.gatewayRouting).length > 0 && (
+              <p className="text-xs text-gray-500 mt-0.5">
+                Por método: {(['PIX', 'CREDIT_CARD', 'BOLETO'] as const)
+                  .filter((m) => product.gatewayRouting?.[m])
+                  .map((m) => `${m === 'CREDIT_CARD' ? 'Cartão' : m === 'BOLETO' ? 'Boleto' : 'PIX'} → ${gatewayLabels[product.gatewayRouting![m]!] ?? product.gatewayRouting![m]}`)
+                  .join(' · ')}
+              </p>
+            )}
             <p className="text-xs text-gray-400 mt-2">Criado em {formatDate(product.createdAt)}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -267,7 +300,7 @@ export default function ProductDetailPage() {
               variant="outline"
               size="sm"
               onClick={() => {
-                resetProduct({ trialDays: product.trialDays ?? 0, gatewayName: product.gatewayName ?? '' })
+                resetProduct(productFormValues(product))
                 setProductError('')
                 setShowEditProductModal(true)
               }}
@@ -567,7 +600,7 @@ export default function ProductDetailPage() {
         onClose={() => {
           setShowEditProductModal(false)
           setProductError('')
-          resetProduct({ trialDays: product.trialDays ?? 0, gatewayName: product.gatewayName ?? '' })
+          resetProduct(productFormValues(product))
         }}
         title="Editar Produto"
         size="sm"
@@ -591,7 +624,7 @@ export default function ProductDetailPage() {
           />
           <Select
             id="product-gatewayName"
-            label="Gateway de Pagamento"
+            label="Gateway de Pagamento (padrão)"
             placeholder="Usar gateway padrão (Configurações)"
             options={[
               { value: 'asaas', label: 'Asaas' },
@@ -601,6 +634,52 @@ export default function ProductDetailPage() {
             ]}
             {...registerProduct('gatewayName')}
           />
+
+          <div className="pt-2 border-t border-gray-100">
+            <p className="text-sm font-medium text-gray-700">Personalizar por método de pagamento</p>
+            <p className="text-xs text-gray-500 mb-3">
+              Opcional. Quando definido, o método escolhido no checkout usa esse gateway específico — ignora o padrão acima.
+            </p>
+            <div className="space-y-3">
+              <Select
+                id="product-gatewayRoutingPix"
+                label="PIX"
+                placeholder="Usar gateway padrão"
+                options={[
+                  { value: 'asaas', label: 'Asaas' },
+                  { value: 'mercadopago', label: 'Mercado Pago' },
+                  { value: 'livepix', label: 'LivePix' },
+                  { value: 'stripe', label: 'Stripe' },
+                ]}
+                {...registerProduct('gatewayRoutingPix')}
+              />
+              <Select
+                id="product-gatewayRoutingCard"
+                label="Cartão de Crédito"
+                placeholder="Usar gateway padrão"
+                options={[
+                  { value: 'asaas', label: 'Asaas' },
+                  { value: 'mercadopago', label: 'Mercado Pago' },
+                  { value: 'livepix', label: 'LivePix' },
+                  { value: 'stripe', label: 'Stripe' },
+                ]}
+                {...registerProduct('gatewayRoutingCard')}
+              />
+              <Select
+                id="product-gatewayRoutingBoleto"
+                label="Boleto"
+                placeholder="Usar gateway padrão"
+                options={[
+                  { value: 'asaas', label: 'Asaas' },
+                  { value: 'mercadopago', label: 'Mercado Pago' },
+                  { value: 'livepix', label: 'LivePix' },
+                  { value: 'stripe', label: 'Stripe' },
+                ]}
+                {...registerProduct('gatewayRoutingBoleto')}
+              />
+            </div>
+          </div>
+
           <div className="flex gap-3 justify-end pt-2">
             <Button
               type="button"
@@ -608,7 +687,7 @@ export default function ProductDetailPage() {
               onClick={() => {
                 setShowEditProductModal(false)
                 setProductError('')
-                resetProduct({ trialDays: product.trialDays ?? 0, gatewayName: product.gatewayName ?? '' })
+                resetProduct(productFormValues(product))
               }}
             >
               Cancelar

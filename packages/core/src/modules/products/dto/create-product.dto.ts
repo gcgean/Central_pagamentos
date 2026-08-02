@@ -1,4 +1,5 @@
-import { IsString, IsBoolean, IsOptional, IsEnum, IsInt, Min, MinLength, MaxLength, Matches } from 'class-validator'
+import { IsString, IsBoolean, IsOptional, IsEnum, IsInt, Min, MinLength, MaxLength, Matches, ValidateNested } from 'class-validator'
+import { Type } from 'class-transformer'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 
 export enum ProductBillingType {
@@ -18,6 +19,23 @@ export enum ProductGateway {
   MERCADOPAGO = 'mercadopago',
   LIVEPIX     = 'livepix',
   STRIPE      = 'stripe',
+}
+
+export class GatewayRoutingDto {
+  @ApiPropertyOptional({ enum: ProductGateway, description: 'Gateway usado quando o método escolhido no checkout for PIX.' })
+  @IsOptional()
+  @IsEnum(ProductGateway)
+  PIX?: ProductGateway
+
+  @ApiPropertyOptional({ enum: ProductGateway, description: 'Gateway usado quando o método escolhido no checkout for Cartão de Crédito.' })
+  @IsOptional()
+  @IsEnum(ProductGateway)
+  CREDIT_CARD?: ProductGateway
+
+  @ApiPropertyOptional({ enum: ProductGateway, description: 'Gateway usado quando o método escolhido no checkout for Boleto.' })
+  @IsOptional()
+  @IsEnum(ProductGateway)
+  BOLETO?: ProductGateway
 }
 
 export class CreateProductDto {
@@ -72,4 +90,13 @@ export class CreateProductDto {
   @IsOptional()
   @IsEnum(ProductGateway)
   gatewayName?: ProductGateway
+
+  @ApiPropertyOptional({
+    type: GatewayRoutingDto,
+    description: 'Override de gateway por método de pagamento (PIX/CREDIT_CARD/BOLETO). Método sem override cai para gatewayName, depois para o gateway ativo global.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GatewayRoutingDto)
+  gatewayRouting?: GatewayRoutingDto
 }
