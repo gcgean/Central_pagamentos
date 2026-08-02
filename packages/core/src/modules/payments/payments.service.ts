@@ -191,6 +191,81 @@ export class PaymentsService {
     return 'pending'
   }
 
+  // ── Stripe: sincronização de pendentes (rede de segurança caso o webhook falhe) ──
+  //
+  // A Stripe não tem hoje um mecanismo de confirmação além do webhook. Este job
+  // espelha o do Mercado Pago: varre cobranças 'pending' e consulta a Checkout
+  // Session diretamente na Stripe, confirmando (ou expirando) o pagamento mesmo
+  // que o webhook nunca tenha chegado.
+
+  async syncPendingStripeChargesBatch(limit = 100): Promise<{
+    scanned: number
+    paid: number
+    failed: number
+  }> {
+    return this.syncPendingStripeChargesBatchThrottled(limit, 0)
+  }
+
+  async syncPendingStripeChargesBatchThrottled(
+    limit = 20,
+    delayMs = 350,
+  ): Promise<{
+    scanned: number
+    paid: number
+    failed: number
+  }> {
+    const pending = await this.repo.listPendingStripeCharges(limit)
+    if (pending.length === 0) {
+      return { scanned: 0, paid: 0, failed: 0 }
+    }
+
+    const cfg = await this.settings.getGatewayConfig()
+    this.stripe.setCredentials(cfg.stripe.secretKey, cfg.stripe.webhookSecret)
+
+    let paid = 0
+    let failed = 0
+
+    for (let index = 0; index < pending.length; index++) {
+      const charge = pending[index]
+      try {
+        const result = await this.syncPendingStripeChargeWithConfiguredClient(charge.externalChargeId)
+        if (result === 'paid') paid++
+        if (result === 'failed') failed++
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'erro desconhecido'
+        this.logger.warn(`Falha ao sincronizar cobrança Stripe pendente ${charge.id}: ${message}`)
+      }
+
+      // Evita rajadas contra o gateway; mantém throughput constante e previsível.
+      if (delayMs > 0 && index < pending.length - 1) {
+        await this.sleep(delayMs)
+      }
+    }
+
+    return {
+      scanned: pending.length,
+      paid,
+      failed,
+    }
+  }
+
+  private async syncPendingStripeChargeWithConfiguredClient(
+    externalChargeId: string,
+  ): Promise<'paid' | 'failed' | 'pending'> {
+    if (!externalChargeId) return 'pending'
+    const session = await this.stripe.getCheckoutSession(externalChargeId)
+    const status = StripeGateway.mapCheckoutSessionStatus(String(session.status ?? ''), session.payment_status ?? undefined)
+    if (status === 'paid') {
+      await this.invoices.markPaid(String(session.id), session)
+      return 'paid'
+    }
+    if (status === 'canceled') {
+      await this.invoices.markFailed(String(session.id), 'checkout_session_expired')
+      return 'failed'
+    }
+    return 'pending'
+  }
+
   private async sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms))
   }

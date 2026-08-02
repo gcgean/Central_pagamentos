@@ -153,6 +153,22 @@ export class PaymentsRepository {
     }))
   }
 
+  async listPendingStripeCharges(limit = 100): Promise<Array<{ id: string; externalChargeId: string }>> {
+    const rows = await this.sql`
+      SELECT id, external_charge_id
+      FROM charges
+      WHERE status = 'pending'
+        AND gateway_name = 'stripe'
+        AND external_charge_id IS NOT NULL
+      ORDER BY COALESCE(updated_at, created_at) DESC, created_at DESC
+      LIMIT ${limit}
+    `
+    return rows.map((row: any) => ({
+      id: row.id,
+      externalChargeId: row.external_charge_id,
+    }))
+  }
+
   async updateChargeStatus(id: string, status: string, paidAt?: Date) {
     const [row] = await this.sql`
       UPDATE charges

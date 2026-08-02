@@ -44,4 +44,36 @@ export class PaymentsSyncScheduler {
       await this.sql`SELECT pg_advisory_unlock(${lockId})`
     }
   }
+
+  // Rede de segurança para a Stripe: hoje a confirmação de pagamento depende só
+  // do webhook (sem fallback nativo, ao contrário do Mercado Pago). Este job
+  // varre cobranças pendentes e consulta a Checkout Session diretamente na
+  // Stripe, evitando que um pagamento real fique preso em "pendente" se o
+  // webhook falhar ou nunca chegar. Lock separado do MP para não competir.
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'stripe-pending-sync' })
+  async syncPendingStripeCharges(): Promise<void> {
+    const enabled = this.config.get<string>('STRIPE_PENDING_SYNC_ENABLED', 'true') !== 'false'
+    if (!enabled) return
+
+    const lockId = Number(this.config.get<string>('STRIPE_PENDING_SYNC_LOCK_ID', '918273646')) || 918273646
+    const [lock] = await this.sql`SELECT pg_try_advisory_lock(${lockId}) AS locked`
+    if (!lock?.locked) {
+      this.logger.debug('Sincronização Stripe de pendentes ignorada: lock já em uso por outra instância')
+      return
+    }
+
+    try {
+      const batchSize = Number(this.config.get<string>('STRIPE_PENDING_SYNC_BATCH', '20')) || 20
+      const delayMs = Number(this.config.get<string>('STRIPE_PENDING_SYNC_DELAY_MS', '350')) || 350
+      const result = await this.payments.syncPendingStripeChargesBatchThrottled(batchSize, delayMs)
+
+      if (result.scanned > 0) {
+        this.logger.log(
+          `Sincronização Stripe de pendentes concluída: varridas=${result.scanned}, pagas=${result.paid}, falhas=${result.failed}, delayMs=${delayMs}`,
+        )
+      }
+    } finally {
+      await this.sql`SELECT pg_advisory_unlock(${lockId})`
+    }
+  }
 }
