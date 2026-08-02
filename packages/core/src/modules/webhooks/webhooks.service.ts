@@ -305,12 +305,16 @@ export class WebhooksController {
       // do nível raiz e foi para dentro de invoice.parent.subscription_details —
       // sem esse fallback, toda fatura de recorrência chega sem o ID vinculável.
       const invoiceSubscriptionId = String(obj.subscription ?? obj.parent?.subscription_details?.subscription ?? '')
-      // Pelo mesmo motivo, period_start/period_end da invoice se moveram para
-      // dentro de cada item em "lines" — caem para o nível raiz só em contas
-      // ainda na API version antiga.
-      const invoiceLine = obj.lines?.data?.[0]
-      const invoicePeriodStart = obj.period_start ?? invoiceLine?.period?.start ?? null
-      const invoicePeriodEnd = obj.period_end ?? invoiceLine?.period?.end ?? null
+      // O período de cobrança real da assinatura vive no item de linha. O
+      // period_start/period_end do nível raiz descreve a fatura em si e, na
+      // criação, vem com início == fim — usar ele faz a licença nascer vencida
+      // (o cliente paga um mês e recebe só os dias de carência). Por isso a
+      // linha tem prioridade; o topo é fallback para contas em API antiga.
+      const invoiceLine = obj.lines?.data?.find(
+        (line) => Number(line?.period?.end ?? 0) > Number(line?.period?.start ?? 0),
+      )
+      const invoicePeriodStart = invoiceLine?.period?.start ?? obj.period_start ?? null
+      const invoicePeriodEnd = invoiceLine?.period?.end ?? obj.period_end ?? null
 
       if (stripeType === 'checkout.session.completed' && obj.mode === 'subscription') {
         // Recorrência nativa: aqui só vinculamos o external_subscription_id à

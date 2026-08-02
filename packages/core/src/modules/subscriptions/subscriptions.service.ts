@@ -12,6 +12,7 @@ import dayjs from 'dayjs'
 import { InternalEventsService } from '../webhooks/internal-events.service'
 import { AccessCacheService } from '../../shared/cache/access-cache.service'
 import { PaymentsService } from '../payments/payments.service'
+import { PlansService } from '../plans/plans.service'
 
 @Injectable()
 export class SubscriptionsService {
@@ -27,6 +28,7 @@ export class SubscriptionsService {
     private readonly internalEvents: InternalEventsService,
     private readonly accessCache: AccessCacheService,
     private readonly payments: PaymentsService,
+    private readonly plans: PlansService,
   ) {}
 
   async create(dto: CreateSubscriptionDto, actorId?: string): Promise<Subscription> {
@@ -79,6 +81,22 @@ export class SubscriptionsService {
   // Chamado após pagamento confirmado
   async activate(subscriptionId: string, periodStart: Date, periodEnd: Date): Promise<Subscription> {
     const sub = await this.findById(subscriptionId)
+
+    // Rede de segurança: se o gateway mandar um período degenerado (fim <= início),
+    // a licença nasceria vencida — o cliente paga o mês e recebe só a carência.
+    // Nesse caso derivamos o fim pelo intervalo do plano contratado.
+    if (periodEnd.getTime() <= periodStart.getTime()) {
+      const plan = await this.plans.findById(sub.planId)
+      const unit = (plan.intervalUnit ?? 'month') as 'day' | 'week' | 'month' | 'year'
+      const count = Number(plan.intervalCount ?? 1) || 1
+      const derived = dayjs(periodStart).add(count, unit).toDate()
+      this.logger.warn(
+        `Período inválido recebido para assinatura ${subscriptionId} ` +
+        `(${periodStart.toISOString()} → ${periodEnd.toISOString()}). ` +
+        `Derivado do plano (${count} ${unit}): ${derived.toISOString()}`,
+      )
+      periodEnd = derived
+    }
 
     const updated = await this.repo.update(subscriptionId, {
       status: 'active',
