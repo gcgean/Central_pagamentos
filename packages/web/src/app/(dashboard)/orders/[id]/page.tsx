@@ -93,12 +93,19 @@ export default function OrderDetailPage() {
       if (variables.billingType === 'CREDIT_CARD') {
         const redirectUrl = data?.checkoutUrl
         if (!redirectUrl) {
-          setActionError('Não foi possível obter URL do checkout do Mercado Pago.')
+          setActionError('Não foi possível obter URL do checkout hospedado.')
           return
         }
         try {
           const parsed = new URL(redirectUrl)
-          const allowedHosts = ['mercadopago.com', 'mercadopago.com.br', 'www.mercadopago.com.br', 'www.mercadopago.com']
+          // Domínios de checkout hospedado dos gateways que suportam cartão via
+          // redirect (Mercado Pago, Stripe, LivePix) — evita open redirect para
+          // qualquer outro host.
+          const allowedHosts = [
+            'mercadopago.com', 'mercadopago.com.br', 'www.mercadopago.com.br', 'www.mercadopago.com',
+            'checkout.stripe.com',
+            'checkout.livepix.gg',
+          ]
           if (!allowedHosts.some((host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`))) {
             setActionError('URL de redirecionamento inválida para checkout.')
             return
@@ -261,7 +268,7 @@ export default function OrderDetailPage() {
           {selectedBillingType === 'CREDIT_CARD' && (
             <div className="space-y-3 border border-gray-200 rounded-lg p-3">
               <p className="text-sm text-gray-700">
-                Você será redirecionado para o checkout seguro do Mercado Pago para concluir o pagamento com cartão.
+                Você será redirecionado para o checkout seguro do gateway configurado para concluir o pagamento com cartão.
               </p>
             </div>
           )}
