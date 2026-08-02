@@ -64,7 +64,7 @@ const cancelSchema = z.object({
 })
 
 const checkoutSchema = z.object({
-  billingType: z.enum(['PIX', 'CREDIT_CARD']),
+  billingType: z.enum(['PIX', 'CREDIT_CARD', 'BOLETO']),
   installmentCount: z.string().optional(),
 })
 
@@ -312,6 +312,7 @@ export default function SubscriptionDetailPage() {
             options={[
               { value: 'PIX', label: 'PIX' },
               { value: 'CREDIT_CARD', label: 'Cartão de Crédito' },
+              { value: 'BOLETO', label: 'Boleto' },
             ]}
             {...checkoutForm.register('billingType')}
           />
