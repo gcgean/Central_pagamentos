@@ -296,9 +296,21 @@ export class WebhooksController {
         subscription?: string
         period_start?: number
         period_end?: number
+        lines?: { data?: Array<{ period?: { start?: number; end?: number } }> }
+        parent?: { subscription_details?: { subscription?: string } }
       }
       const objId = String(obj.id ?? '')
       const externalReference = String(obj.client_reference_id ?? '')
+      // A partir da API version 2025-03-31 da Stripe, invoice.subscription saiu
+      // do nível raiz e foi para dentro de invoice.parent.subscription_details —
+      // sem esse fallback, toda fatura de recorrência chega sem o ID vinculável.
+      const invoiceSubscriptionId = String(obj.subscription ?? obj.parent?.subscription_details?.subscription ?? '')
+      // Pelo mesmo motivo, period_start/period_end da invoice se moveram para
+      // dentro de cada item em "lines" — caem para o nível raiz só em contas
+      // ainda na API version antiga.
+      const invoiceLine = obj.lines?.data?.[0]
+      const invoicePeriodStart = obj.period_start ?? invoiceLine?.period?.start ?? null
+      const invoicePeriodEnd = obj.period_end ?? invoiceLine?.period?.end ?? null
 
       if (stripeType === 'checkout.session.completed' && obj.mode === 'subscription') {
         // Recorrência nativa: aqui só vinculamos o external_subscription_id à
@@ -320,13 +332,13 @@ export class WebhooksController {
         eventType = 'subscription.renewed'
         payload = {
           ...body,
-          externalSubscriptionId: String(obj.subscription ?? ''),
-          periodStart: obj.period_start ?? null,
-          periodEnd: obj.period_end ?? null,
+          externalSubscriptionId: invoiceSubscriptionId,
+          periodStart: invoicePeriodStart,
+          periodEnd: invoicePeriodEnd,
         }
       } else if (stripeType === 'invoice.payment_failed') {
         eventType = 'subscription.payment_failed'
-        payload = { ...body, externalSubscriptionId: String(obj.subscription ?? '') }
+        payload = { ...body, externalSubscriptionId: invoiceSubscriptionId }
       } else {
         eventType = stripeType || 'unknown'
       }
