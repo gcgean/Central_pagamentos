@@ -43,7 +43,11 @@ export class SchedulerService {
     this.logger.log(`Reenfileirando ${failed.length} eventos internos não entregues`)
 
     for (const event of failed) {
+      // jobId fixo = eventId: evita empilhar um job novo por hora para o mesmo
+      // evento enquanto o job original ainda está ativo/aguardando no BullMQ
+      // (era isso que deixava referências órfãs na fila depois do removeOnFail).
       await this.eventsQueue.add('deliver-event', { eventId: event.id }, {
+        jobId: event.id,
         attempts: 3,
         backoff: { type: 'fixed', delay: 5000 },
       })

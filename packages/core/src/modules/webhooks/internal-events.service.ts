@@ -36,8 +36,11 @@ export class InternalEventsService {
       RETURNING id
     `
 
-    // Enfileira entrega
+    // Enfileira entrega. jobId fixo = eventId: se já houver um job ativo/esperando
+    // para este evento (ex.: o cron de retry tentando de novo antes de esgotar o
+    // backoff do BullMQ), o add() vira no-op em vez de criar um job duplicado.
     await this.queue.add('deliver-event', { eventId: event.id }, {
+      jobId: event.id,
       attempts: 5,
       backoff: { type: 'exponential', delay: 3000 },
     })
