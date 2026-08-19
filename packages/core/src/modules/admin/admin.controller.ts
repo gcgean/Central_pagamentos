@@ -234,6 +234,53 @@ export class AdminController {
     }
   }
 
+  @Get('daily-summary')
+  @ApiOperation({ summary: 'Resumo de um dia especifico: novos assinantes, faturamento do dia e acumulado do mes' })
+  async getDailySummary(@Query('productId') productId?: string, @Query('date') dateParam?: string) {
+    if (!productId) throw new BadRequestException('productId é obrigatório')
+
+    const [product] = await this.sql`SELECT id FROM products WHERE id = ${productId}`
+    if (!product) throw new NotFoundException('Produto não encontrado')
+
+    // Sem data explicita, usa o dia de ontem (uso tipico: resumo diario as 08h
+    // cobrindo o dia anterior completo).
+    const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+      ? dateParam
+      : new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10)
+
+    const [{ new_subscribers }] = await this.sql`
+      WITH fp AS (
+        SELECT customer_id, MIN(paid_at) AS first_paid_at
+        FROM orders
+        WHERE product_id = ${productId} AND status = 'paid' AND paid_at IS NOT NULL
+        GROUP BY customer_id
+      )
+      SELECT COUNT(*)::int AS new_subscribers FROM fp
+      WHERE first_paid_at::date = ${date}::date
+    `
+
+    const [{ revenue_today }] = await this.sql`
+      SELECT COALESCE(SUM(contracted_amount), 0)::bigint AS revenue_today
+      FROM orders
+      WHERE product_id = ${productId} AND status = 'paid' AND paid_at::date = ${date}::date
+    `
+
+    const [{ revenue_mtd }] = await this.sql`
+      SELECT COALESCE(SUM(contracted_amount), 0)::bigint AS revenue_mtd
+      FROM orders
+      WHERE product_id = ${productId} AND status = 'paid'
+        AND paid_at >= date_trunc('month', ${date}::date)
+        AND paid_at::date <= ${date}::date
+    `
+
+    return {
+      date,
+      newSubscribers: Number(new_subscribers || 0),
+      revenueTodayCents: Number(revenue_today || 0),
+      revenueMonthToDateCents: Number(revenue_mtd || 0),
+    }
+  }
+
   @Get('audit-logs')
   @ApiOperation({ summary: 'Consultar trilha de auditoria' })
   getAuditLogs(@Query('entityType') entityType?: string, @Query('entityId') entityId?: string) {
