@@ -248,6 +248,17 @@ export class AdminController {
       ? dateParam
       : new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10)
 
+    // O banco roda em UTC, mas o dia que interessa é o de Brasília — é o que o
+    // gestor vê no relógio, e é o mesmo recorte que o NoSigilo usa para contar
+    // os cadastros do dia. Sem isso, as duas metades do resumo diário falam de
+    // janelas de 24h diferentes: pagamentos entre 21h e meia-noite (BRT) já
+    // estão no dia seguinte em UTC e caíam no resumo errado.
+    // O Brasil não tem mais horário de verão desde 2019, então o -3 é fixo.
+    const [ano, mes, dia] = date.split('-').map(Number)
+    const inicioDia = new Date(Date.UTC(ano, mes - 1, dia, 3, 0, 0)).toISOString()
+    const fimDia = new Date(Date.UTC(ano, mes - 1, dia + 1, 3, 0, 0)).toISOString()
+    const inicioMes = new Date(Date.UTC(ano, mes - 1, 1, 3, 0, 0)).toISOString()
+
     const [{ new_subscribers }] = await this.sql`
       WITH fp AS (
         SELECT customer_id, MIN(paid_at) AS first_paid_at
@@ -256,21 +267,21 @@ export class AdminController {
         GROUP BY customer_id
       )
       SELECT COUNT(*)::int AS new_subscribers FROM fp
-      WHERE first_paid_at::date = ${date}::date
+      WHERE first_paid_at >= ${inicioDia} AND first_paid_at < ${fimDia}
     `
 
     const [{ revenue_today }] = await this.sql`
       SELECT COALESCE(SUM(contracted_amount), 0)::bigint AS revenue_today
       FROM orders
-      WHERE product_id = ${productId} AND status = 'paid' AND paid_at::date = ${date}::date
+      WHERE product_id = ${productId} AND status = 'paid'
+        AND paid_at >= ${inicioDia} AND paid_at < ${fimDia}
     `
 
     const [{ revenue_mtd }] = await this.sql`
       SELECT COALESCE(SUM(contracted_amount), 0)::bigint AS revenue_mtd
       FROM orders
       WHERE product_id = ${productId} AND status = 'paid'
-        AND paid_at >= date_trunc('month', ${date}::date)
-        AND paid_at::date <= ${date}::date
+        AND paid_at >= ${inicioMes} AND paid_at < ${fimDia}
     `
 
     return {
