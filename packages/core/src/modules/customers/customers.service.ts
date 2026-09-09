@@ -3,8 +3,7 @@ import { CustomersRepository } from './customers.repository'
 import { CreateCustomerDto } from './dto/create-customer.dto'
 import { UpdateCustomerDto } from './dto/update-customer.dto'
 import { Customer } from './entities/customer.entity'
-import { cleanDocument, validateDocument } from '../../shared/utils/document.util'
-import { createHash } from 'crypto'
+import { buildSyntheticDocument, cleanDocument, validateDocument } from '../../shared/utils/document.util'
 
 @Injectable()
 export class CustomersService {
@@ -26,11 +25,8 @@ export class CustomersService {
         throw new ConflictException(`Documento inválido: ${dto.document}`)
       }
 
-      const existing = await this.repo.findByDocument(doc)
-      if (existing) {
-        throw new ConflictException(`Já existe um cliente com o documento ${dto.document}`)
-      }
-
+      // Documento repetido deixou de ser conflito na migration 008: a identidade
+      // do cliente e o e-mail, e a mesma pessoa pode ter mais de um cadastro.
       return this.repo.create({ ...dto, email: normalizedEmail, document: rawDocument, documentClean: doc })
     }
 
@@ -99,11 +95,10 @@ export class CustomersService {
       throw new ConflictException('Documento do titular inválido para persistência')
     }
 
-    const existing = await this.repo.findByDocument(documentClean)
-    if (existing && existing.id !== customerId) {
-      throw new ConflictException('Documento do titular já pertence a outro cliente')
-    }
-
+    // Antes isto barrava quando o documento ja pertencia a outro cliente, e era
+    // o segundo ponto que quebrava o caso real: a pessoa com duas contas pagava
+    // na segunda e recebia "documento ja pertence a outro cliente". Com o
+    // e-mail como identidade, documento repetido e esperado.
     if (customer.documentClean === documentClean) {
       return customer
     }
@@ -116,15 +111,8 @@ export class CustomersService {
   }
 
   private async generateSyntheticDocument(email: string, personType: 'PF' | 'PJ'): Promise<string> {
-    const length = personType === 'PJ' ? 14 : 11
-
     for (let attempt = 0; attempt < 20; attempt++) {
-      const base = createHash('sha256').update(`${email}:${attempt}`).digest('hex')
-      const digits = Array.from(base)
-        .map(ch => (parseInt(ch, 16) % 10).toString())
-        .join('')
-      const generated = `9${digits.slice(0, length - 1)}`
-
+      const generated = buildSyntheticDocument(email, personType, attempt)
       const existing = await this.repo.findByDocument(generated)
       if (!existing) {
         return generated

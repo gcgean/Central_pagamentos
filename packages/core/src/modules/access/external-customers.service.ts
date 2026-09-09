@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common'
 import { CustomersRepository } from '../customers/customers.repository'
-import { cleanDocument, validateDocument } from '../../shared/utils/document.util'
+import { buildSyntheticDocument, cleanDocument, validateDocument } from '../../shared/utils/document.util'
 import { ExternalPersonType, UpsertExternalCustomerDto } from './dto/external-customer.dto'
 
 @Injectable()
@@ -17,9 +17,12 @@ export class ExternalCustomersService {
       throw new BadRequestException('Informe ao menos document ou email.')
     }
 
-    const byDocument = documentClean ? await this.customers.findByDocument(documentClean) : null
-    const byEmail = !byDocument && email ? await this.customers.findByEmail(email) : null
-    const customer = byDocument ?? byEmail
+    // E-mail primeiro: desde a migration 008 o documento pode repetir entre
+    // clientes, entao buscar por ele devolveria um dos donos ao acaso. O
+    // documento fica como caminho de consulta para quem so tem esse dado.
+    const byEmail = email ? await this.customers.findByEmail(email) : null
+    const byDocument = !byEmail && documentClean ? await this.customers.findByDocument(documentClean) : null
+    const customer = byEmail ?? byDocument
 
     this.logAudit('customer.resolve', {
       exists: Boolean(customer),
@@ -33,24 +36,21 @@ export class ExternalCustomersService {
   }
 
   async upsert(dto: UpsertExternalCustomerDto) {
-    const documentClean = cleanDocument(dto.document)
     const email = dto.email.trim().toLowerCase()
+    const informado = String(dto.document ?? '').trim()
+    const documentClean = informado ? cleanDocument(informado) : ''
 
-    if (!validateDocument(documentClean, dto.personType as ExternalPersonType)) {
+    // Documento passou a ser opcional: fora do Brasil nao existe CPF, e o
+    // pagamento por cartao (Stripe/MercadoPago) nao precisa dele. Quando vem,
+    // continua sendo validado — documento errado e pior que documento ausente,
+    // porque so falha na hora de cobrar.
+    if (documentClean && !validateDocument(documentClean, dto.personType as ExternalPersonType)) {
       throw new BadRequestException('Documento inválido para o personType informado.')
     }
 
-    const existingByDocument = await this.customers.findByDocument(documentClean)
-    if (existingByDocument) {
-      this.logAudit('customer.upsert.existing', {
-        customerId: existingByDocument.id,
-        by: 'document',
-        document: this.maskDocument(documentClean),
-        email: this.maskEmail(email),
-      })
-      return { exists: true, source: 'existing' as const, customerId: existingByDocument.id }
-    }
-
+    // A identidade e o e-mail. Antes a busca era pelo documento primeiro, e era
+    // isso que devolvia o mesmo customerId para duas contas da mesma pessoa —
+    // o satelite entao recusava o checkout da segunda.
     const existingByEmail = await this.customers.findByEmail(email)
     if (existingByEmail) {
       this.logAudit('customer.upsert.existing', {
@@ -63,10 +63,14 @@ export class ExternalCustomersService {
     }
 
     try {
+      // Sem documento informado, gera o sintetico: a coluna e NOT NULL e o valor
+      // comeca com 9, faixa inexistente em CPF/CNPJ reais.
+      const documentoFinal = documentClean || buildSyntheticDocument(email, dto.personType as 'PF' | 'PJ')
+
       const created = await this.customers.create({
         personType: dto.personType,
-        document: dto.document,
-        documentClean,
+        document: informado || documentoFinal,
+        documentClean: documentoFinal,
         legalName: dto.legalName,
         email,
         phone: dto.phone,
@@ -90,7 +94,9 @@ export class ExternalCustomersService {
       return { exists: true, source: 'created' as const, customerId: created.id }
     } catch (err: any) {
       if (err?.code === '23505') {
-        const existing = (await this.customers.findByDocument(documentClean)) || (await this.customers.findByEmail(email))
+        // O indice unico que resta e o de e-mail (migration 008), entao a corrida
+        // so pode ter sido perdida para outro upsert do MESMO e-mail.
+        const existing = await this.customers.findByEmail(email)
         if (existing) {
           this.logAudit('customer.upsert.idempotent-hit', {
             customerId: existing.id,

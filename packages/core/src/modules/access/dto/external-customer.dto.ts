@@ -23,10 +23,19 @@ export class UpsertExternalCustomerDto {
   @IsEnum(ExternalPersonType)
   personType: ExternalPersonType
 
-  @ApiProperty({ example: '12.345.678/0001-90' })
+  /**
+   * Opcional desde a migration 008. Fora do Brasil nao existe CPF/CNPJ e o
+   * pagamento e por cartao, que nao exige documento. Quando ausente, a
+   * aplicacao gera um identificador interno a partir do e-mail.
+   *
+   * Continua obrigatorio no CHECKOUT de PIX, onde a validacao permanece
+   * (resolvePayerData exige CPF/CNPJ valido do titular).
+   */
+  @ApiPropertyOptional({ example: '12.345.678/0001-90' })
+  @IsOptional()
   @IsString()
   @MinLength(11)
-  document: string
+  document?: string
 
   @ApiProperty({ example: 'Empresa Exemplo LTDA' })
   @IsString()

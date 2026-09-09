@@ -188,10 +188,12 @@ export class AccessService {
     }
 
     // 1. Localizar ou criar cliente
-    let customer = await this.customersRepo.findByDocument(documentClean)
+    // E-mail primeiro, mesma razao do upsert: com documento repetivel (migration
+    // 008), buscar por ele devolveria um dos donos ao acaso.
+    const email = dto.email.trim().toLowerCase()
+    let customer = (await this.customersRepo.findByEmail(email)) ?? null
     if (!customer) {
-      const email = dto.email.trim().toLowerCase()
-      customer = await this.customersRepo.findByEmail(email) ?? null
+      customer = await this.customersRepo.findByDocument(documentClean)
       if (!customer) {
         customer = await this.customersRepo.create({
           personType: dto.personType,

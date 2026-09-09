@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 // Utilitário de validação de CPF e CNPJ
 
 export function cleanDocument(doc: string): string {
@@ -54,4 +56,26 @@ export function formatCPF(cpf: string): string {
 export function formatCNPJ(cnpj: string): string {
   const c = cleanDocument(cnpj)
   return `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}`
+}
+
+/**
+ * Documento sintetico para cliente sem CPF/CNPJ — venda fora do Brasil, onde
+ * nao existe documento equivalente e o pagamento e por cartao.
+ *
+ * A coluna `document` e NOT NULL desde o schema inicial, e trocar isso mexeria
+ * em todo lugar que le documento. Gerar um valor derivado do e-mail custa
+ * menos e mantem o contrato: e deterministico (mesmo e-mail, mesmo valor, o
+ * que evita duplicata em retentativa) e comeca com 9, faixa que nao existe em
+ * CPF nem CNPJ reais, entao nunca colide com documento de verdade.
+ *
+ * `attempt` existe para o caso improvavel de colisao de hash entre e-mails
+ * diferentes: quem chama tenta o proximo valor.
+ */
+export function buildSyntheticDocument(email: string, personType: 'PF' | 'PJ', attempt = 0): string {
+  const length = personType === 'PJ' ? 14 : 11
+  const base = createHash('sha256').update(`${email}:${attempt}`).digest('hex')
+  const digits = Array.from(base)
+    .map((ch) => (parseInt(ch, 16) % 10).toString())
+    .join('')
+  return `9${digits.slice(0, length - 1)}`
 }
