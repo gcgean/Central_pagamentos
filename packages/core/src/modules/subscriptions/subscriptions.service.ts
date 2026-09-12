@@ -272,12 +272,45 @@ export class SubscriptionsService {
    * de novo — cobre o caso raro do webhook de fatura chegar antes do webhook
    * que vincula o external_subscription_id (checkout.session.completed).
    */
-  async activateByExternal(externalId: string, periodStart: Date, periodEnd: Date): Promise<void> {
+  async activateByExternal(
+    externalId: string,
+    periodStart: Date,
+    periodEnd: Date,
+    // Cobrança que motivou a ativação, quando o gateway informa (Stripe
+    // invoice.paid). Ver o comentário no dispatch abaixo.
+    cobranca?: { amount: number; currency: string; externalInvoiceId: string },
+  ): Promise<void> {
     const sub = await this.repo.findByExternalId(externalId)
     if (!sub) {
       throw new NotFoundException(`Assinatura externa ainda não vinculada: ${externalId}`)
     }
     await this.activate(sub.id, periodStart, periodEnd)
+
+    // Recorrência nativa (Stripe) não passa por InvoicesService: a Stripe cobra
+    // o cartão sozinha e só avisa com invoice.paid. Por isso ela nunca gerava
+    // linha em payments nem o evento payment.approved para o sistema satélite —
+    // o satélite só recebia license.activated (1º ciclo) e license.renewed
+    // (renovação), que não dizem que entrou dinheiro.
+    //
+    // Consequência medida no NoSigilo em 12/09/2026: comissão de promotor é
+    // gerada por payment.approved, então nenhuma renovação paga pela Stripe
+    // gerava comissão. Emitir o mesmo evento que o fluxo de fatura emite deixa
+    // o "entrou dinheiro" com uma fonte só, independente do gateway.
+    if (cobranca && cobranca.amount > 0) {
+      await this.internalEvents.dispatch({
+        productId: sub.productId,
+        customerId: sub.customerId,
+        eventType: 'payment.approved',
+        payload: {
+          chargeId: cobranca.externalInvoiceId,
+          status: 'paid',
+          amount: cobranca.amount,
+          currency: cobranca.currency,
+          originType: 'subscription',
+          originId: sub.id,
+        },
+      })
+    }
   }
 
   /** Marca em atraso a partir do id externo (webhook de fatura com cobrança recusada). */

@@ -155,7 +155,18 @@ export class WebhookProcessorService extends WorkerHost {
       case 'subscription.renewed': {
         const periodStart = payload?.periodStart ? new Date(Number(payload.periodStart) * 1000) : new Date()
         const periodEnd = payload?.periodEnd ? new Date(Number(payload.periodEnd) * 1000) : periodStart
-        await this.subscriptions.activateByExternal(String(payload?.externalSubscriptionId ?? ''), periodStart, periodEnd)
+        // invoice.paid da Stripe: amount_paid em centavos, currency em minúsculas.
+        const fatura = (payload?.data?.object ?? {}) as { id?: string; amount_paid?: number; currency?: string }
+        await this.subscriptions.activateByExternal(
+          String(payload?.externalSubscriptionId ?? ''),
+          periodStart,
+          periodEnd,
+          {
+            amount: Number(fatura.amount_paid ?? 0),
+            currency: String(fatura.currency ?? 'brl').toUpperCase(),
+            externalInvoiceId: String(fatura.id ?? ''),
+          },
+        )
         break
       }
 
