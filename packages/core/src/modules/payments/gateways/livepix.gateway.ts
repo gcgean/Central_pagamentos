@@ -109,8 +109,11 @@ export class LivePixGateway {
           this.logger.warn(
             `LivePix rate limit (429) em ${err.config?.url} — cooldown de ${Math.ceil(cooldownMs / 1000)}s`,
           )
+          // A mensagem dizia "solicitações de pagamento" em qualquer 429 — no
+          // registro de webhook isso mandava procurar o problema no lugar errado.
+          const espera = Math.ceil(cooldownMs / 1000)
           throw new HttpException(
-            'Muitas solicitações de pagamento em sequência. Aguarde um instante e tente novamente.',
+            `A LivePix limitou as requisições (429). Aguarde ${espera}s e tente novamente.`,
             HttpStatus.TOO_MANY_REQUESTS,
           )
         }
