@@ -308,20 +308,21 @@ export class LivePixGateway {
   }
 
   /**
-   * Consulta um pagamento pela reference devolvida no checkout — o mesmo valor
-   * gravado como external_charge_id da cobrança (e o que a LivePix manda como
-   * resource.reference no webhook).
+   * Lista os pagamentos RECEBIDOS na conta, do mais recente para o mais antigo.
    *
-   * Devolve null quando a LivePix responde 404, em vez de estourar: para a
-   * sincronização de pendentes, "a LivePix não conhece esse pagamento" é uma
-   * resposta normal — é o estado de quem gerou o PIX e não pagou.
+   * É assim que a sincronização de pendentes descobre quem pagou: cada item traz
+   * a `reference` do checkout que originou o pagamento — o mesmo valor gravado
+   * como external_charge_id da cobrança, e o mesmo que chega como
+   * resource.reference no webhook.
+   *
+   * Consultar um a um por `GET /v2/payments/{reference}` não serve: essa rota
+   * espera o id do pagamento recebido, que só existe depois de pago e que nós
+   * não temos antes do webhook. Além disso, a lista resolve o lote inteiro numa
+   * chamada — o que importa numa API com rate limit por endpoint.
    */
-  async findPaymentByReference(reference: string): Promise<LivePixPayment | null> {
-    const res = await this.client.get(`/v2/payments/${reference}`, {
-      validateStatus: status => (status >= 200 && status < 300) || status === 404,
-    })
-    if (res.status === 404) return null
-    return (res.data?.data ?? null) as LivePixPayment | null
+  async listReceivedPayments(page = 1, limit = 100): Promise<LivePixPayment[]> {
+    const { data } = await this.client.get('/v2/payments', { params: { page, limit } })
+    return Array.isArray(data?.data) ? data.data : []
   }
 
   // ─── Planos de assinatura ──────────────────────────────────────────────────
