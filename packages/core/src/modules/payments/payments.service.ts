@@ -321,6 +321,125 @@ export class PaymentsService {
     return 'pending'
   }
 
+  // ── LivePix: sincronização de pendentes (rede de segurança caso o webhook falhe) ──
+  //
+  // A confirmação de um PIX da LivePix chega só por webhook. Em 15/09/2026 a
+  // LivePix ficou ~1h sem entregar nenhum aviso (o log do nginx não registrou
+  // uma única chamada dela no período, e todas as anteriores tinham respondido
+  // 201): quem pagou nesse intervalo ficou preso em 'pending' e nunca recebeu
+  // acesso, sem nenhum caminho de recuperação — o botão "Já paguei — verificar"
+  // do produto só relê o status que o Hub já gravou.
+  //
+  // Este job espelha o da Stripe: varre as cobranças pendentes e pergunta à
+  // própria LivePix se aquele pagamento existe.
+  //
+  // Regra de ouro: só marca como paga com EVIDÊNCIA POSITIVA. Resposta ausente,
+  // 404 ou formato inesperado contam como "ainda não pagou" — o erro de deixar
+  // alguém esperando o webhook chegar é reversível; o de liberar acesso para
+  // quem só gerou o PIX não é.
+  async syncPendingLivePixChargesBatch(limit = 100): Promise<{
+    scanned: number
+    paid: number
+    failed: number
+  }> {
+    return this.syncPendingLivePixChargesBatchThrottled(limit, 0)
+  }
+
+  async syncPendingLivePixChargesBatchThrottled(
+    limit = 20,
+    delayMs = 700,
+    maxAgeHours = 24,
+  ): Promise<{
+    scanned: number
+    paid: number
+    failed: number
+  }> {
+    // A LivePix limita por endpoint e o 429 dela é caro (uso abusivo pode custar
+    // a conta). Se já estamos em cooldown, nem começa.
+    if (this.livepix.rateLimited) {
+      this.logger.warn('Sincronização LivePix adiada: em cooldown de rate limit')
+      return { scanned: 0, paid: 0, failed: 0 }
+    }
+
+    const pending = await this.repo.listPendingLivePixCharges(limit, maxAgeHours)
+    if (pending.length === 0) {
+      return { scanned: 0, paid: 0, failed: 0 }
+    }
+
+    const cfg = await this.settings.getGatewayConfig()
+    this.livepix.setCredentials(cfg.livepix.clientId, cfg.livepix.clientSecret, cfg.livepix.scope)
+
+    let paid = 0
+
+    for (let index = 0; index < pending.length; index++) {
+      const charge = pending[index]
+      try {
+        const result = await this.syncPendingLivePixChargeWithConfiguredClient(charge.externalChargeId)
+        if (result === 'paid') paid++
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'erro desconhecido'
+        this.logger.warn(`Falha ao sincronizar cobrança LivePix pendente ${charge.id}: ${message}`)
+        // Um 429 derruba o resto do lote junto: insistir é o que agrava.
+        if (this.livepix.rateLimited) break
+      }
+
+      if (delayMs > 0 && index < pending.length - 1) {
+        await this.sleep(delayMs)
+      }
+    }
+
+    // Não há 'failed' aqui: a LivePix não expõe cobrança recusada/expirada por
+    // consulta, então nada é marcado como falho por este caminho.
+    return { scanned: pending.length, paid, failed: 0 }
+  }
+
+  private async syncPendingLivePixChargeWithConfiguredClient(
+    externalChargeId: string,
+  ): Promise<'paid' | 'pending'> {
+    if (!externalChargeId) return 'pending'
+    const remote = await this.livepix.findPaymentByReference(externalChargeId)
+    if (!PaymentsService.isLivePixPaymentSettled(remote)) {
+      this.logUnsettledLivePixPaymentOnce(externalChargeId, remote)
+      return 'pending'
+    }
+    // Mesma chave que o webhook usa (payload.chargeId = resource.reference), para
+    // que o charge resolvido e o external_charge_id gravado sejam os mesmos pelos
+    // dois caminhos.
+    await this.invoices.markPaid(externalChargeId, remote)
+    this.logger.log(`Cobrança LivePix ${externalChargeId} confirmada por sincronização (webhook não chegou)`)
+    return 'paid'
+  }
+
+  /**
+   * A LivePix não documenta um campo de status no pagamento: o objeto de
+   * /v2/payments representa um pagamento RECEBIDO, e o comprovante (proof) é o
+   * sinal de que o dinheiro entrou. Os demais nomes de campo são tolerância a
+   * variações do provedor — nenhum deles, ausente, libera acesso.
+   */
+  private static isLivePixPaymentSettled(payment: any): boolean {
+    if (!payment || typeof payment !== 'object') return false
+    if (String(payment.proof ?? '').trim()) return true
+    const status = String(payment.status ?? payment.state ?? '').toLowerCase()
+    return ['paid', 'completed', 'approved', 'confirmed', 'settled'].includes(status)
+  }
+
+  /**
+   * Registra uma vez por cobrança o que a LivePix devolveu quando não demos o
+   * pagamento por concluído. Sem isso, calibrar o critério acima em produção
+   * exigiria adivinhar o formato; com log a cada minuto, viraria ruído.
+   */
+  private logUnsettledLivePixPaymentOnce(externalChargeId: string, payment: any): void {
+    if (payment == null) return
+    if (this.livePixUnsettledLogged.has(externalChargeId)) return
+    if (this.livePixUnsettledLogged.size > 500) this.livePixUnsettledLogged.clear()
+    this.livePixUnsettledLogged.add(externalChargeId)
+    this.logger.log(
+      `LivePix respondeu para ${externalChargeId} sem evidência de pagamento: ${JSON.stringify(payment).slice(0, 400)}`,
+    )
+  }
+
+  private readonly livePixUnsettledLogged = new Set<string>()
+
   private async sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms))
   }

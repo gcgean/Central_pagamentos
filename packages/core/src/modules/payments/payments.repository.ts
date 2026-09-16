@@ -169,6 +169,34 @@ export class PaymentsRepository {
     }))
   }
 
+  /**
+   * Pendentes da LivePix para a rede de segurança do webhook.
+   *
+   * Limitado por idade de propósito: um PIX gerado e abandonado fica 'pending'
+   * para sempre, e sem esse corte a varredura viraria uma consulta por minuto,
+   * eterna, contra uma API com rate limit agressivo. Passado o prazo, o PIX já
+   * expirou de qualquer forma.
+   */
+  async listPendingLivePixCharges(
+    limit = 20,
+    maxAgeHours = 24,
+  ): Promise<Array<{ id: string; externalChargeId: string }>> {
+    const rows = await this.sql`
+      SELECT id, external_charge_id
+      FROM charges
+      WHERE status = 'pending'
+        AND gateway_name = 'livepix'
+        AND external_charge_id IS NOT NULL
+        AND created_at > NOW() - (${maxAgeHours} * INTERVAL '1 hour')
+      ORDER BY created_at DESC
+      LIMIT ${limit}
+    `
+    return rows.map((row: any) => ({
+      id: row.id,
+      externalChargeId: row.external_charge_id,
+    }))
+  }
+
   async updateChargeStatus(id: string, status: string, paidAt?: Date) {
     const [row] = await this.sql`
       UPDATE charges

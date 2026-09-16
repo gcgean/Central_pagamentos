@@ -76,4 +76,40 @@ export class PaymentsSyncScheduler {
       await this.sql`SELECT pg_advisory_unlock(${lockId})`
     }
   }
+
+  // Rede de segurança para a LivePix: a confirmação do PIX depende só do webhook
+  // dela, e em 15/09/2026 essa entrega parou por ~1h — quem pagou no intervalo
+  // ficou preso em "pendente" para sempre. Este job consulta a própria LivePix e
+  // confirma o pagamento mesmo que o aviso nunca chegue.
+  //
+  // O ritmo é mais folgado que o do MP/Stripe (lote menor, pausa maior): a
+  // LivePix limita por endpoint, o 429 dela entra em cooldown e uso abusivo pode
+  // custar a conta. Lock separado, para não competir com os outros dois.
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'livepix-pending-sync' })
+  async syncPendingLivePixCharges(): Promise<void> {
+    const enabled = this.config.get<string>('LIVEPIX_PENDING_SYNC_ENABLED', 'true') !== 'false'
+    if (!enabled) return
+
+    const lockId = Number(this.config.get<string>('LIVEPIX_PENDING_SYNC_LOCK_ID', '918273647')) || 918273647
+    const [lock] = await this.sql`SELECT pg_try_advisory_lock(${lockId}) AS locked`
+    if (!lock?.locked) {
+      this.logger.debug('Sincronização LivePix de pendentes ignorada: lock já em uso por outra instância')
+      return
+    }
+
+    try {
+      const batchSize = Number(this.config.get<string>('LIVEPIX_PENDING_SYNC_BATCH', '10')) || 10
+      const delayMs = Number(this.config.get<string>('LIVEPIX_PENDING_SYNC_DELAY_MS', '700')) || 700
+      const maxAgeHours = Number(this.config.get<string>('LIVEPIX_PENDING_SYNC_MAX_AGE_HOURS', '24')) || 24
+      const result = await this.payments.syncPendingLivePixChargesBatchThrottled(batchSize, delayMs, maxAgeHours)
+
+      if (result.paid > 0) {
+        this.logger.log(
+          `Sincronização LivePix de pendentes concluída: varridas=${result.scanned}, pagas=${result.paid}, delayMs=${delayMs}`,
+        )
+      }
+    } finally {
+      await this.sql`SELECT pg_advisory_unlock(${lockId})`
+    }
+  }
 }

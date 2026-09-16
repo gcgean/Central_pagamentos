@@ -50,4 +50,20 @@ export class PaymentsController {
     const safeDelay = Number.isFinite(parsedDelay) ? Math.min(Math.max(parsedDelay, 0), 2000) : 350
     return this.service.syncPendingMercadoPagoChargesBatchThrottled(safeLimit, safeDelay)
   }
+
+  @Post('sync-pending/livepix')
+  @ApiOperation({ summary: 'Forçar sincronização em lote de cobranças pendentes (LivePix)' })
+  syncPendingLivePix(
+    @Query('limit') limit?: string,
+    @Query('delayMs') delayMs?: string,
+    @Query('maxAgeHours') maxAgeHours?: string,
+  ) {
+    const parsedLimit = Number(limit)
+    const parsedDelay = Number(delayMs)
+    const parsedAge = Number(maxAgeHours)
+    const safeLimit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 50) : 10
+    const safeDelay = Number.isFinite(parsedDelay) ? Math.min(Math.max(parsedDelay, 0), 5000) : 700
+    const safeAge = Number.isFinite(parsedAge) ? Math.min(Math.max(parsedAge, 1), 168) : 24
+    return this.service.syncPendingLivePixChargesBatchThrottled(safeLimit, safeDelay, safeAge)
+  }
 }

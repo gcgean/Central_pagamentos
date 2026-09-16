@@ -299,6 +299,28 @@ export class LivePixGateway {
     return data.data
   }
 
+  /** True enquanto estivermos em cooldown local de rate limit da LivePix. */
+  get rateLimited(): boolean {
+    return this.rateLimitedUntil > Date.now()
+  }
+
+  /**
+   * Consulta um pagamento pela reference devolvida no checkout — o mesmo valor
+   * gravado como external_charge_id da cobrança (e o que a LivePix manda como
+   * resource.reference no webhook).
+   *
+   * Devolve null quando a LivePix responde 404, em vez de estourar: para a
+   * sincronização de pendentes, "a LivePix não conhece esse pagamento" é uma
+   * resposta normal — é o estado de quem gerou o PIX e não pagou.
+   */
+  async findPaymentByReference(reference: string): Promise<LivePixPayment | null> {
+    const res = await this.client.get(`/v2/payments/${reference}`, {
+      validateStatus: status => (status >= 200 && status < 300) || status === 404,
+    })
+    if (res.status === 404) return null
+    return (res.data?.data ?? null) as LivePixPayment | null
+  }
+
   // ─── Planos de assinatura ──────────────────────────────────────────────────
 
   async createPlan(params: {

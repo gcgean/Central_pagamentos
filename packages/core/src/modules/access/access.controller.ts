@@ -9,6 +9,9 @@ import {
   ResolveAccessResponseDto,
 } from './dto/resolve-access.dto'
 import { PlansService } from '../plans/plans.service'
+import { ProductsService } from '../products/products.service'
+import { SettingsService } from '../settings/settings.service'
+import { gatewayRequiresPayerDocument, type PayerDocumentMethod } from '../payments/payer-document.util'
 
 @ApiTags('access')
 @ApiSecurity('api-key')
@@ -19,6 +22,8 @@ export class AccessController {
   constructor(
     private readonly service: AccessService,
     private readonly plans: PlansService,
+    private readonly products: ProductsService,
+    private readonly settings: SettingsService,
   ) {}
 
   // ─── Endpoint legado — mantido para retrocompatibilidade ──────────────────
@@ -161,5 +166,37 @@ Use-o para consultas periódicas após o onboarding inicial.
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
     }))
+  }
+
+  @Get('products/:productId/payment-methods')
+  @ApiOperation({
+    summary: 'Formas de pagamento do produto e quando o CPF/CNPJ é exigido (API Key)',
+    description:
+      'O satélite usa isto para só pedir documento do pagador onde o gateway que vai processar realmente exige — ' +
+      'pedir onde não é preciso barra quem não tem CPF. A rota do gateway é a mesma que o checkout aplica: ' +
+      'override por método no produto > gateway do produto > gateway ativo global.',
+  })
+  async getPaymentMethods(
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Req() req?: any,
+  ) {
+    const integrationProductId = req?.productId
+    if (integrationProductId && integrationProductId !== productId) {
+      throw new ForbiddenException('API Key sem permissão para este produto.')
+    }
+
+    const product = await this.products.findById(productId)
+    const gwConfig = await this.settings.getGatewayConfig()
+    const routing = (product.gatewayRouting as Record<string, string> | null) ?? null
+
+    const methods: PayerDocumentMethod[] = ['PIX', 'CREDIT_CARD', 'BOLETO']
+    return methods.map((method) => {
+      const gateway = routing?.[method] ?? product.gatewayName ?? gwConfig.activeGateway
+      return {
+        method,
+        gateway,
+        documentRequired: gatewayRequiresPayerDocument(gateway, method),
+      }
+    })
   }
 }
