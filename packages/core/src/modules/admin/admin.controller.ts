@@ -180,6 +180,80 @@ export class AdminController {
       churned: churnMap.get(m) ?? 0,
     }))
 
+    // ── Série diária (últimos 60 dias) ──
+    // Mesmas regras da mensal, com o dia contado no fuso de Brasília: em UTC, um
+    // pagamento feito às 22h daqui cairia no dia seguinte.
+    const TZ = 'America/Sao_Paulo'
+    const DIAS = 60
+    const dailyRevenueRows = await this.sql`
+      SELECT to_char((paid_at AT TIME ZONE ${TZ})::date, 'YYYY-MM-DD') AS day,
+             SUM(contracted_amount)::bigint AS revenue_cents
+      FROM orders
+      WHERE product_id = ${productId} AND status = 'paid' AND paid_at IS NOT NULL
+        AND paid_at >= NOW() - (${DIAS} * INTERVAL '1 day')
+      GROUP BY 1
+    `
+    const dailyNewRows = await this.sql`
+      WITH fp AS (
+        SELECT customer_id, MIN(paid_at) AS first_paid_at
+        FROM orders
+        WHERE product_id = ${productId} AND status = 'paid' AND paid_at IS NOT NULL
+        GROUP BY customer_id
+      )
+      SELECT to_char((first_paid_at AT TIME ZONE ${TZ})::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS new_customers
+      FROM fp
+      WHERE first_paid_at >= NOW() - (${DIAS} * INTERVAL '1 day')
+      GROUP BY 1
+    `
+    const dailyRenewalRows = await this.sql`
+      WITH fp AS (
+        SELECT customer_id, MIN(paid_at) AS first_paid_at
+        FROM orders
+        WHERE product_id = ${productId} AND status = 'paid' AND paid_at IS NOT NULL
+        GROUP BY customer_id
+      )
+      SELECT to_char((o.paid_at AT TIME ZONE ${TZ})::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS renewals
+      FROM orders o
+      JOIN fp ON fp.customer_id = o.customer_id
+      WHERE o.product_id = ${productId} AND o.status = 'paid' AND o.paid_at > fp.first_paid_at
+        AND o.paid_at >= NOW() - (${DIAS} * INTERVAL '1 day')
+      GROUP BY 1
+    `
+    const dailyChurnRows = await this.sql`
+      SELECT to_char((COALESCE(l.grace_until, l.expires_at) AT TIME ZONE ${TZ})::date, 'YYYY-MM-DD') AS day,
+             COUNT(DISTINCT l.customer_id)::int AS churned
+      FROM licenses l
+      WHERE l.product_id = ${productId}
+        AND l.expires_at IS NOT NULL
+        AND COALESCE(l.grace_until, l.expires_at) < NOW()
+        AND COALESCE(l.grace_until, l.expires_at) >= NOW() - (${DIAS} * INTERVAL '1 day')
+        AND NOT EXISTS (
+          SELECT 1 FROM licenses l2
+          WHERE l2.customer_id = l.customer_id AND l2.product_id = l.product_id
+            AND l2.status = 'active' AND (l2.expires_at IS NULL OR l2.expires_at > NOW())
+        )
+      GROUP BY 1
+    `
+    const toDayMap = (rows: any[], key: string) =>
+      new Map(rows.map((r) => [String(r.day), Number(r[key] || 0)]))
+    const dRevenue = toDayMap(dailyRevenueRows, 'revenue_cents')
+    const dNew = toDayMap(dailyNewRows, 'new_customers')
+    const dRenewal = toDayMap(dailyRenewalRows, 'renewals')
+    const dChurn = toDayMap(dailyChurnRows, 'churned')
+    // Dias em Brasília (UTC-3 fixo desde 2019, sem horário de verão).
+    const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000)
+    const daily = Array.from({ length: DIAS }, (_, idx) => {
+      const d = new Date(Date.UTC(hojeBr.getUTCFullYear(), hojeBr.getUTCMonth(), hojeBr.getUTCDate() - (DIAS - 1 - idx)))
+      const day = d.toISOString().slice(0, 10)
+      return {
+        day,
+        revenueCents: dRevenue.get(day) ?? 0,
+        newCustomers: dNew.get(day) ?? 0,
+        renewals: dRenewal.get(day) ?? 0,
+        churned: dChurn.get(day) ?? 0,
+      }
+    })
+
     // ── Agregados de 12 meses ──
     const revenueLast12moCents = monthly.reduce((s, r) => s + r.revenueCents, 0)
     const newLast12mo = monthly.reduce((s, r) => s + r.newCustomers, 0)
@@ -230,6 +304,7 @@ export class AdminController {
         netMonthlyGrowthPct: Math.round(netRate * 1000) / 10,
       },
       monthly,
+      daily,
       projection: projFuture,
     }
   }
