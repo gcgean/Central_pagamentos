@@ -11,7 +11,7 @@ import {
 import { PlansService } from '../plans/plans.service'
 import { ProductsService } from '../products/products.service'
 import { SettingsService } from '../settings/settings.service'
-import { gatewayRequiresPayerDocument, type PayerDocumentMethod } from '../payments/payer-document.util'
+import { gatewayRequiresPayerDocument, gatewayRequiresPayerName, type PayerDocumentMethod } from '../payments/payer-document.util'
 
 @ApiTags('access')
 @ApiSecurity('api-key')
@@ -196,6 +196,7 @@ Use-o para consultas periódicas após o onboarding inicial.
         method,
         gateway,
         documentRequired: gatewayRequiresPayerDocument(gateway, method),
+        nameRequired: gatewayRequiresPayerName(gateway, method),
       }
     })
   }

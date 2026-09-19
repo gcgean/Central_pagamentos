@@ -16,6 +16,22 @@
  */
 export type PayerDocumentMethod = 'PIX' | 'BOLETO' | 'CREDIT_CARD'
 
+/**
+ * Quem exige o NOME do pagador digitado no checkout. Segue o documento: os
+ * gateways que cobram CPF também querem o nome como está nele (Asaas, Mercado
+ * Pago no PIX, boleto em qualquer gateway). LivePix não pede nome e a Stripe
+ * coleta o nome do titular na própria página do cartão.
+ *
+ * Quando não é exigido, o satélite manda o nome do perfil — o cadastro do
+ * cliente no Hub continua com nome, só a pessoa não precisa digitar de novo.
+ */
+export function gatewayRequiresPayerName(
+  gatewayName: string | null | undefined,
+  method: PayerDocumentMethod,
+): boolean {
+  return gatewayRequiresPayerDocument(gatewayName, method)
+}
+
 export function gatewayRequiresPayerDocument(
   gatewayName: string | null | undefined,
   method: PayerDocumentMethod,
