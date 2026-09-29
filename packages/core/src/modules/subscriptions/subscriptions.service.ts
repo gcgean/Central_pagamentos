@@ -255,6 +255,8 @@ export class SubscriptionsService {
     externalReference: string,
     externalSubscriptionId: string,
     gatewayName: string,
+    // Checkout Session concluído com payment_status = paid.
+    pago = false,
   ): Promise<void> {
     const [originType, ...rest] = String(externalReference || '').split(':')
     const subscriptionId = rest.join(':')
@@ -262,8 +264,47 @@ export class SubscriptionsService {
       this.logger.warn(`externalReference inválida para vincular assinatura ao gateway: "${externalReference}"`)
       return
     }
+    const sub = await this.findById(subscriptionId)
+
+    // Cada checkout recorrente cria uma assinatura NOVA no gateway. Quando a
+    // pessoa tentava de novo, o vínculo era sobrescrito e a anterior ficava
+    // solta — cobrando todo mês sem estar ligada a nada (dupla cobrança). Agora
+    // a anterior é cancelada no gateway. Se ela chegou a ser paga, o valor do
+    // ciclo precisa ser estornado à mão (fica registrado no log e na auditoria).
+    const anterior = String(sub.externalSubscriptionId ?? '')
+    if (anterior && anterior !== externalSubscriptionId) {
+      try {
+        await this.payments.cancelRecurringSubscription(gatewayName, anterior)
+        this.logger.warn(
+          `Assinatura ${subscriptionId}: assinatura anterior no gateway (${anterior}) cancelada ao vincular a nova ` +
+          `(${externalSubscriptionId}). Se a anterior foi paga, estornar o ciclo manualmente.`,
+        )
+        await this.audit.log({
+          actorType: 'system',
+          action: 'subscription.external_replaced',
+          entityType: 'subscription',
+          entityId: subscriptionId,
+          beforeData: { externalSubscriptionId: anterior },
+          afterData: { externalSubscriptionId },
+          note: 'Assinatura anterior cancelada no gateway (possível cobrança duplicada: verificar estorno).',
+        })
+      } catch (err) {
+        this.logger.error(`Falha ao cancelar assinatura anterior ${anterior} no gateway:`, err)
+      }
+    }
+
     await this.repo.update(subscriptionId, { externalSubscriptionId, gatewayName } as Partial<Subscription>)
     this.logger.log(`Assinatura ${subscriptionId} vinculada ao gateway ${gatewayName} (external: ${externalSubscriptionId})`)
+
+    // Pagou no checkout: libera já. Período derivado do plano (início = fim faz
+    // o activate calcular pelo intervalo); o invoice.paid, quando chegar,
+    // acerta o período exato e emite o payment.approved com o valor.
+    const vigente = sub.status === 'active' && !!sub.currentPeriodEnd && new Date(sub.currentPeriodEnd).getTime() > Date.now()
+    if (pago && !vigente) {
+      const agora = new Date()
+      await this.activate(subscriptionId, agora, agora)
+      this.accessCache.invalidateStatus(sub.customerId, sub.productId)
+    }
   }
 
   /**

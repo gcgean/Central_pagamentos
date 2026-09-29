@@ -1,7 +1,7 @@
 // ── subscriptions.controller.ts ───────────────────────────────────────────────
 import {
   Controller, Get, Post, Patch, Body, Param, ParseUUIDPipe,
-  HttpCode, HttpStatus, UseGuards, Req
+  HttpCode, HttpStatus, UseGuards, Req, BadRequestException
 } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { AdminJwtGuard } from '../../shared/guards/admin-jwt.guard'
@@ -148,8 +148,14 @@ export class SubscriptionsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateRecurringCheckoutDto,
   ) {
-    return this.service.findById(id).then(sub =>
-      this.checkout.createRecurringSubscription({
+    return this.service.findById(id).then(sub => {
+      // Já pago e dentro do período: um checkout novo criaria uma segunda
+      // assinatura no gateway e cobraria de novo.
+      const vigente = sub.status === 'active' && !!sub.currentPeriodEnd && new Date(sub.currentPeriodEnd).getTime() > Date.now()
+      if (vigente) {
+        throw new BadRequestException('Esta assinatura já está ativa e paga — não é preciso pagar de novo.')
+      }
+      return this.checkout.createRecurringSubscription({
         customerId: sub.customerId,
         productId: sub.productId,
         planId: sub.planId,
@@ -157,7 +163,7 @@ export class SubscriptionsController {
         billingType: 'CREDIT_CARD',
         returnUrl: dto?.returnUrl,
       })
-    )
+    })
   }
 
   @Patch(':id/cancel')

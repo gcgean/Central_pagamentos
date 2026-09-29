@@ -143,13 +143,19 @@ export class WebhookProcessorService extends WorkerHost {
       // ── Recorrência nativa do gateway (ex: Stripe Subscriptions) ─────────
       // Vincula o id externo assim que o Checkout Session de assinatura é
       // concluído — precisa acontecer antes do primeiro subscription.renewed.
-      case 'subscription.linked':
+      case 'subscription.linked': {
+        const sessao = (payload?.data?.object ?? {}) as { payment_status?: string }
         await this.subscriptions.linkExternalSubscription(
           String(payload?.externalReference ?? ''),
           String(payload?.externalSubscriptionId ?? ''),
           'stripe',
+          // Checkout concluído e PAGO: libera na hora, sem depender só do
+          // invoice.paid (que pode chegar antes do vínculo e esgotar as
+          // tentativas, ou se perder).
+          sessao.payment_status === 'paid',
         )
         break
+      }
 
       // Cobrança do ciclo confirmada no cartão salvo (1º ciclo ou renovação).
       case 'subscription.renewed': {
@@ -358,7 +364,14 @@ export class WebhooksController {
         eventType = stripeType || 'unknown'
       }
 
-      externalId = objId
+      // Idempotência pelo id do EVENTO da Stripe (evt_…), não do objeto. Com o
+      // id do objeto, invoice.payment_failed e invoice.paid da MESMA fatura
+      // tinham o mesmo id: o "pago" chegava depois e era descartado como
+      // duplicado — o cliente pagava e a licença nunca era liberada (NoSigilo,
+      // 29/09/2026: 2 clientes, um deles tentou 3x e pagou 3x). Reenvio da
+      // própria Stripe repete o mesmo evt_, então a proteção continua valendo.
+      const stripeEventId = String(body?.id ?? '')
+      externalId = stripeEventId.startsWith('evt_') ? stripeEventId : objId
     }
 
     if (provider === 'mercadopago' && ['payment.updated', 'payment.created'].includes(eventType) && externalId) {
