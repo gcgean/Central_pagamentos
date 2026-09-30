@@ -5,6 +5,11 @@ import { AuditService } from './audit.service'
 import { Inject } from '@nestjs/common'
 import { DATABASE_CONNECTION } from '../../shared/database/database.module'
 import type { Sql } from 'postgres'
+import Stripe from 'stripe'
+import { SettingsService } from '../settings/settings.service'
+
+type MetodoPagamento = 'pix' | 'credit_card' | 'boleto'
+type PagamentoPorMetodo = { metodo: MetodoPagamento; pagoEm: Date; valorCents: number; cliente: string; renovacao: boolean }
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -12,10 +17,135 @@ import type { Sql } from 'postgres'
 @Controller({ path: 'admin', version: '1' })
 export class AdminController {
 
+  // Faturas pagas da Stripe por produto: a lista inteira é lida da API, então
+  // guarda por 10 min para o painel não bater na Stripe a cada abertura.
+  private cacheCartao = new Map<string, { em: number; itens: PagamentoPorMetodo[] }>()
+
   constructor(
     private readonly audit: AuditService,
     @Inject(DATABASE_CONNECTION) private readonly sql: Sql,
+    private readonly settings: SettingsService,
   ) {}
+
+  // Pagamentos confirmados por forma de pagamento (Pix, cartão, boleto).
+  //
+  // Pix, boleto e cartão avulso ficam em `charges`. O cartão RECORRENTE (Stripe
+  // Subscriptions) não passa por `charges`: a Stripe cobra sozinha e só avisa
+  // com invoice.paid — e parte desses avisos foi descartada até 29/09/2026
+  // (bug de idempotência). Por isso o cartão recorrente vem direto da Stripe.
+  @Get('payment-methods')
+  @ApiOperation({ summary: 'Pagamentos confirmados por forma de pagamento (quantidade, valor, clientes, mês a mês)' })
+  async getPaymentMethods(@Query('productId') productId?: string, @Query('since') since?: string) {
+    if (!productId) throw new BadRequestException('productId é obrigatório')
+    const [product] = await this.sql`SELECT id, code, name FROM products WHERE id = ${productId}`
+    if (!product) throw new NotFoundException('Produto não encontrado')
+    const desde = since && /^\d{4}-\d{2}-\d{2}$/.test(since) ? new Date(`${since}T00:00:00Z`) : null
+
+    const hub = await this.sql`
+      SELECT ch.payment_method::text AS metodo, ch.amount::int AS valor, ch.paid_at, ch.customer_id::text AS cliente,
+             i.subscription_id IS NOT NULL AS de_assinatura
+      FROM charges ch
+      JOIN invoices i ON i.id = ch.invoice_id
+      LEFT JOIN orders o ON o.id = i.order_id
+      LEFT JOIN subscriptions s ON s.id = i.subscription_id
+      WHERE ch.status = 'paid' AND ch.paid_at IS NOT NULL
+        AND COALESCE(o.product_id, s.product_id) = ${productId}
+    `
+    // "Renovação" no Pix/boleto = cliente que já tinha pago antes pelo mesmo método ou outro.
+    const itens: PagamentoPorMetodo[] = hub.map((r: any) => ({
+      metodo: r.metodo as MetodoPagamento,
+      pagoEm: new Date(r.paid_at),
+      valorCents: Number(r.valor || 0),
+      cliente: String(r.cliente),
+      renovacao: false,
+    }))
+
+    let cartaoErro: string | null = null
+    try {
+      itens.push(...(await this.faturasCartao(String(product.name))))
+    } catch (err: any) {
+      cartaoErro = err?.message ?? 'Falha ao ler a Stripe'
+    }
+
+    // Primeira vez de cada cliente vs. pagamentos seguintes.
+    itens.sort((a, b) => a.pagoEm.getTime() - b.pagoEm.getTime())
+    const jaPagou = new Set<string>()
+    for (const it of itens) {
+      if (it.metodo !== 'credit_card') it.renovacao = jaPagou.has(it.cliente)
+      jaPagou.add(it.cliente)
+    }
+
+    const noPeriodo = desde ? itens.filter((i) => i.pagoEm >= desde) : itens
+    const metodos: MetodoPagamento[] = ['pix', 'credit_card', 'boleto']
+    const resumo = metodos.map((metodo) => {
+      const doMetodo = noPeriodo.filter((i) => i.metodo === metodo)
+      return {
+        metodo,
+        pagamentos: doMetodo.length,
+        valorCents: doMetodo.reduce((s, i) => s + i.valorCents, 0),
+        clientes: new Set(doMetodo.map((i) => i.cliente)).size,
+        renovacoes: doMetodo.filter((i) => i.renovacao).length,
+        primeiroPagamentoEm: doMetodo[0]?.pagoEm.toISOString() ?? null,
+      }
+    })
+
+    const porMes = new Map<string, Record<MetodoPagamento, { pagamentos: number; valorCents: number }>>()
+    for (const i of noPeriodo) {
+      const mes = i.pagoEm.toISOString().slice(0, 7)
+      if (!porMes.has(mes)) {
+        porMes.set(mes, { pix: { pagamentos: 0, valorCents: 0 }, credit_card: { pagamentos: 0, valorCents: 0 }, boleto: { pagamentos: 0, valorCents: 0 } })
+      }
+      const m = porMes.get(mes)![i.metodo]
+      m.pagamentos++
+      m.valorCents += i.valorCents
+    }
+
+    // Cobranças que não viraram pagamento (Pix/boleto vencidos, cartão recusado).
+    const naoPagas = await this.sql`
+      SELECT ch.payment_method::text AS metodo, ch.status::text AS status, COUNT(*)::int AS qtd
+      FROM charges ch
+      JOIN invoices i ON i.id = ch.invoice_id
+      LEFT JOIN orders o ON o.id = i.order_id
+      LEFT JOIN subscriptions s ON s.id = i.subscription_id
+      WHERE ch.status IN ('failed', 'pending') AND COALESCE(o.product_id, s.product_id) = ${productId}
+        ${desde ? this.sql`AND ch.created_at >= ${desde}` : this.sql``}
+      GROUP BY 1, 2
+    `
+
+    return {
+      product: { id: product.id, code: product.code, name: product.name },
+      desde: desde?.toISOString() ?? null,
+      geradoEm: new Date().toISOString(),
+      metodos: resumo,
+      mensal: [...porMes.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, m]) => ({ month, ...m })),
+      naoPagas: naoPagas.map((r: any) => ({ metodo: r.metodo, status: r.status, qtd: Number(r.qtd) })),
+      cartaoErro,
+    }
+  }
+
+  private async faturasCartao(nomeProduto: string): Promise<PagamentoPorMetodo[]> {
+    const cache = this.cacheCartao.get(nomeProduto)
+    if (cache && Date.now() - cache.em < 10 * 60 * 1000) return cache.itens.map((i) => ({ ...i }))
+    const cfg = await this.settings.getGatewayConfig()
+    if (!cfg.stripe.isConfigured) return []
+    const stripe = new Stripe(cfg.stripe.secretKey, { timeout: 20_000 })
+    const itens: PagamentoPorMetodo[] = []
+    const alvo = nomeProduto.toUpperCase()
+    for await (const inv of stripe.invoices.list({ status: 'paid', limit: 100 })) {
+      if (!inv.amount_paid) continue
+      const descricao = (inv.lines?.data ?? []).map((l) => l.description ?? '').join(' ').toUpperCase()
+      if (!descricao.includes(alvo)) continue
+      itens.push({
+        metodo: 'credit_card',
+        pagoEm: new Date(Number(inv.status_transitions?.paid_at ?? inv.created) * 1000),
+        valorCents: inv.amount_paid,
+        cliente: String(inv.customer_email || inv.customer || ''),
+        renovacao: inv.billing_reason !== 'subscription_create',
+      })
+    }
+    this.cacheCartao.set(nomeProduto, { em: Date.now(), itens })
+    return itens.map((i) => ({ ...i }))
+  }
 
   @Get('dashboard')
   @ApiOperation({ summary: 'Métricas gerais do painel administrativo' })

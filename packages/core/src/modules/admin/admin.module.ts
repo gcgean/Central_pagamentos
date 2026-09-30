@@ -8,9 +8,12 @@ import { ConfigService } from '@nestjs/config'
 import { ScheduleModule } from '@nestjs/schedule'
 
 import { AdminInitService } from './admin-init.service'
+import { SettingsModule } from '../settings/settings.module'
 
 @Module({
   imports: [
+    // Chave da Stripe para o painel de formas de pagamento.
+    SettingsModule,
     JwtModule.registerAsync({
       global: true,
       inject: [ConfigService],
