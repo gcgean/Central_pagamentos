@@ -123,6 +123,52 @@ export class AdminController {
     }
   }
 
+  // Lista de pagamentos confirmados do produto, um por linha, com quem pagou
+  // (id do cliente no Hub e e-mail). Só leitura: o satélite cruza com os dados
+  // dele (ex.: o NoSigilo soma a receita por estado do usuário). Cartão
+  // recorrente vem da Stripe e só tem o e-mail.
+  @Get('payments-ledger')
+  @ApiOperation({ summary: 'Pagamentos confirmados do produto, um por linha, com cliente e e-mail' })
+  async getPaymentsLedger(@Query('productId') productId?: string) {
+    if (!productId) throw new BadRequestException('productId é obrigatório')
+    const [product] = await this.sql`SELECT id, name FROM products WHERE id = ${productId}`
+    if (!product) throw new NotFoundException('Produto não encontrado')
+    const hub = await this.sql`
+      SELECT ch.payment_method::text AS metodo, ch.amount::int AS valor, ch.paid_at,
+             ch.customer_id::text AS cliente, c.email
+      FROM charges ch
+      JOIN invoices i ON i.id = ch.invoice_id
+      LEFT JOIN orders o ON o.id = i.order_id
+      LEFT JOIN subscriptions s ON s.id = i.subscription_id
+      LEFT JOIN customers c ON c.id = ch.customer_id
+      WHERE ch.status = 'paid' AND ch.paid_at IS NOT NULL
+        AND COALESCE(o.product_id, s.product_id) = ${productId}
+    `
+    const itens = hub.map((r: any) => ({
+      metodo: String(r.metodo),
+      customerId: r.cliente ? String(r.cliente) : null,
+      email: r.email ? String(r.email).toLowerCase() : null,
+      valorCents: Number(r.valor || 0),
+      pagoEm: new Date(r.paid_at).toISOString(),
+    }))
+    let cartaoErro: string | null = null
+    try {
+      for (const f of await this.faturasCartao(String(product.name))) {
+        itens.push({
+          metodo: 'credit_card',
+          customerId: null,
+          email: f.cliente.includes('@') ? f.cliente.toLowerCase() : null,
+          valorCents: f.valorCents,
+          pagoEm: f.pagoEm.toISOString(),
+        })
+      }
+    } catch (err: any) {
+      cartaoErro = err?.message ?? 'Falha ao ler a Stripe'
+    }
+    itens.sort((a, b) => a.pagoEm.localeCompare(b.pagoEm))
+    return { product: { id: product.id, name: product.name }, geradoEm: new Date().toISOString(), itens, cartaoErro }
+  }
+
   private async faturasCartao(nomeProduto: string): Promise<PagamentoPorMetodo[]> {
     const cache = this.cacheCartao.get(nomeProduto)
     if (cache && Date.now() - cache.em < 10 * 60 * 1000) return cache.itens.map((i) => ({ ...i }))
