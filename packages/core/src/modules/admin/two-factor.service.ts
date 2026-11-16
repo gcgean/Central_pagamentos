@@ -63,6 +63,25 @@ export class TwoFactorService {
     return this.config.get('NODE_ENV') === 'production'
   }
 
+  /**
+   * Sistema satélite (ex.: backend do NoSigilo) entrando com a senha do admin
+   * para criar cobranças: não tem como ler e-mail. A chave de integração ativa
+   * (a mesma do X-API-Key) faz o papel do segundo fator, então senha + chave
+   * dispensam o código. Pessoa no navegador não tem a chave e recebe o código.
+   */
+  async chaveDeIntegracaoValida(headerValue: unknown): Promise<boolean> {
+    const chave = Array.isArray(headerValue) ? headerValue[0] : headerValue
+    if (typeof chave !== 'string' || chave.length < 16) return false
+    const [linha] = await this.sql`
+      SELECT id FROM integrations
+      WHERE api_key_hash = ${createHash('sha256').update(chave).digest('hex')} AND is_active = true
+      LIMIT 1
+    `
+    if (!linha) return false
+    this.sql`UPDATE integrations SET last_used_at = NOW() WHERE id = ${linha.id}`.catch(() => {})
+    return true
+  }
+
   async aparelhoConfiavel(adminId: string, deviceToken?: string): Promise<boolean> {
     if (!deviceToken) return false
     const [linha] = await this.sql`

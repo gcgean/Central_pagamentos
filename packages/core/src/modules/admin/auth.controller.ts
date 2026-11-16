@@ -78,7 +78,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 tentativas por minuto
   @ApiOperation({ summary: 'Login do painel administrativo' })
-  async login(@Body() dto: LoginDto) {
+  async login(@Body() dto: LoginDto, @Req() req: any) {
     const [admin] = await this.sql`
       SELECT id, name, email, password_hash, role, is_active, must_change_password
       FROM admins
@@ -96,7 +96,11 @@ export class AuthController {
 
     // Verificação em duas etapas: aparelho que ainda não é de confiança recebe
     // um código por e-mail antes do token.
-    if (this.twoFactor.ativa() && !(await this.twoFactor.aparelhoConfiavel(admin.id, dto.deviceToken))) {
+    if (
+      this.twoFactor.ativa() &&
+      !(await this.twoFactor.chaveDeIntegracaoValida(req?.headers?.['x-api-key'])) &&
+      !(await this.twoFactor.aparelhoConfiavel(admin.id, dto.deviceToken))
+    ) {
       const desafio = await this.twoFactor.criarDesafio(admin as any)
       if ('erro' in desafio) {
         throw new ServiceUnavailableException('Não foi possível enviar o código agora. Tente de novo em instantes.')
