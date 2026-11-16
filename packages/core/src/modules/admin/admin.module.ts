@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config'
 import { ScheduleModule } from '@nestjs/schedule'
 
 import { AdminInitService } from './admin-init.service'
+import { TwoFactorService } from './two-factor.service'
 import { SettingsModule } from '../settings/settings.module'
 
 @Module({
@@ -25,7 +26,7 @@ import { SettingsModule } from '../settings/settings.module'
     ScheduleModule.forRoot(),
   ],
   controllers: [AdminController, AuthController],
-  providers: [AuditService, AdminJwtGuard, AdminInitService],
+  providers: [AuditService, AdminJwtGuard, AdminInitService, TwoFactorService],
   exports: [AuditService, AdminJwtGuard],
 })
 export class AdminModule {}

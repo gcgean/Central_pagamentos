@@ -3,10 +3,11 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth, type LoginChallenge } from '@/contexts/AuthContext'
+import { api } from '@/lib/api'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
-import { BarChart3, Eye, EyeOff } from 'lucide-react'
+import { BarChart3, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 
 const schema = z.object({
   email: z.string().email('E-mail inválido'),
@@ -16,9 +17,48 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, confirmLoginCode } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  // Verificação em duas etapas: depois da senha, o código enviado por e-mail.
+  const [desafio, setDesafio] = useState<LoginChallenge | null>(null)
+  const [codigo, setCodigo] = useState('')
+  const [confiar, setConfiar] = useState(true)
+  const [conferindo, setConferindo] = useState(false)
+  const [aviso, setAviso] = useState('')
+
+  const mensagemDoErro = (err: unknown, padrao: string) => {
+    const axiosErr = err as { response?: { data?: { message?: string } } }
+    return axiosErr?.response?.data?.message ?? padrao
+  }
+
+  const confirmarCodigo = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!desafio || codigo.length !== 6) return
+    setError('')
+    setConferindo(true)
+    try {
+      await confirmLoginCode(desafio.challengeId, codigo, confiar)
+    } catch (err) {
+      setError(mensagemDoErro(err, 'Não foi possível conferir o código.'))
+      setCodigo('')
+    } finally {
+      setConferindo(false)
+    }
+  }
+
+  const reenviar = async () => {
+    if (!desafio) return
+    setError('')
+    setAviso('')
+    try {
+      const { data } = await api.post('/auth/login/2fa/resend', { challengeId: desafio.challengeId })
+      setDesafio({ ...desafio, challengeId: data.challengeId, previewCode: data.previewCode })
+      setAviso('Enviamos um código novo.')
+    } catch (err) {
+      setError(mensagemDoErro(err, 'Não foi possível reenviar o código.'))
+    }
+  }
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -27,10 +67,14 @@ export default function LoginPage() {
   const onSubmit = async (data: FormData) => {
     setError('')
     try {
-      await login(data.email, data.password)
+      const pendente = await login(data.email, data.password)
+      if (pendente) {
+        setDesafio(pendente)
+        setCodigo('')
+        setAviso('')
+      }
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { message?: string } } }
-      setError(axiosErr?.response?.data?.message ?? 'Credenciais inválidas. Tente novamente.')
+      setError(mensagemDoErro(err, 'Credenciais inválidas. Tente novamente.'))
     }
   }
 
@@ -50,8 +94,21 @@ export default function LoginPage() {
           </div>
 
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Entrar</h2>
-            <p className="text-sm text-gray-500 mt-1">Faça login para acessar o painel</p>
+            {desafio ? (
+              <>
+                <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                  <ShieldCheck size={22} className="text-blue-600" /> Verificação
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Enviamos um código de 6 números para <strong>{desafio.emailMasked}</strong>. Ele vale por 10 minutos.
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-2xl font-bold text-gray-900">Entrar</h2>
+                <p className="text-sm text-gray-500 mt-1">Faça login para acessar o painel</p>
+              </>
+            )}
           </div>
 
           {error && (
@@ -60,6 +117,51 @@ export default function LoginPage() {
             </div>
           )}
 
+          {aviso && desafio && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-700">{aviso}</p>
+            </div>
+          )}
+
+          {desafio ? (
+            <form onSubmit={confirmarCodigo} className="space-y-4">
+              <div className="space-y-1">
+                <label htmlFor="codigo" className="block text-sm font-medium text-gray-700">Código</label>
+                <input
+                  id="codigo"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  maxLength={6}
+                  placeholder="000000"
+                  value={codigo}
+                  onChange={(e) => setCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-center text-2xl tracking-[0.5em] font-semibold shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                {desafio.previewCode && (
+                  <p className="text-xs text-amber-600">Ambiente de teste, sem e-mail: código {desafio.previewCode}</p>
+                )}
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={confiar} onChange={(e) => setConfiar(e.target.checked)} className="rounded border-gray-300" />
+                Confiar neste aparelho por 30 dias
+              </label>
+
+              <Button type="submit" loading={conferindo} disabled={codigo.length !== 6} className="w-full justify-center py-2.5" size="lg">
+                {conferindo ? 'Conferindo...' : 'Confirmar'}
+              </Button>
+
+              <div className="flex justify-between text-sm">
+                <button type="button" onClick={() => { setDesafio(null); setError(''); setAviso('') }} className="text-gray-500 hover:text-gray-700">
+                  Voltar
+                </button>
+                <button type="button" onClick={reenviar} className="text-blue-600 hover:text-blue-700">
+                  Reenviar código
+                </button>
+              </div>
+            </form>
+          ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <Input
               id="email"
@@ -108,6 +210,7 @@ export default function LoginPage() {
               {isSubmitting ? 'Entrando...' : 'Entrar'}
             </Button>
           </form>
+          )}
         </div>
 
         <p className="text-center text-xs text-gray-500 mt-6">
