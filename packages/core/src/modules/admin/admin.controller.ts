@@ -348,13 +348,6 @@ export class AdminController {
       months.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`)
     }
 
-    const monthly = months.map((m) => ({
-      month: m,
-      revenueCents: revenueMap.get(m) ?? 0,
-      newCustomers: newMap.get(m) ?? 0,
-      renewals: renewalMap.get(m) ?? 0,
-      churned: churnMap.get(m) ?? 0,
-    }))
 
     // ── Série diária (últimos 60 dias) ──
     // Mesmas regras da mensal, com o dia contado no fuso de Brasília: em UTC, um
@@ -416,6 +409,38 @@ export class AdminController {
     const dNew = toDayMap(dailyNewRows, 'new_customers')
     const dRenewal = toDayMap(dailyRenewalRows, 'renewals')
     const dChurn = toDayMap(dailyChurnRows, 'churned')
+
+    // Cartão recorrente (Stripe) não passa por `orders`: soma as faturas pagas
+    // da Stripe em faturamento, novos (1ª fatura) e renovações. Sem isso, os
+    // planos só no cartão (ex.: Mensal Portugal) ficavam fora do financeiro.
+    const cartao = await this.faturasCartao(String(product.name)).catch(() => [] as PagamentoPorMetodo[])
+    const somar = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v)
+    const diaBr = (d: Date) => new Date(d.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const limite30d = Date.now() - 30 * 24 * 60 * 60 * 1000
+    let cartao30d = 0
+    const cardMap = new Map<string, number>()
+    const dCard = new Map<string, number>()
+    for (const c of cartao) {
+      const mes = c.pagoEm.toISOString().slice(0, 7)
+      const dia = diaBr(c.pagoEm)
+      somar(revenueMap, mes, c.valorCents)
+      somar(dRevenue, dia, c.valorCents)
+      somar(cardMap, mes, c.valorCents)
+      somar(dCard, dia, c.valorCents)
+      if (c.renovacao) { somar(renewalMap, mes, 1); somar(dRenewal, dia, 1) }
+      else { somar(newMap, mes, 1); somar(dNew, dia, 1) }
+      if (c.pagoEm.getTime() >= limite30d) cartao30d += c.valorCents
+    }
+    const clientesCartao = new Set(cartao.filter((c) => !c.renovacao).map((c) => c.cliente)).size
+
+    const monthly = months.map((m) => ({
+      month: m,
+      revenueCents: revenueMap.get(m) ?? 0,
+      cardRevenueCents: cardMap.get(m) ?? 0, // parte do revenueCents que veio do cartão recorrente
+      newCustomers: newMap.get(m) ?? 0,
+      renewals: renewalMap.get(m) ?? 0,
+      churned: churnMap.get(m) ?? 0,
+    }))
     // Dias em Brasília (UTC-3 fixo desde 2019, sem horário de verão).
     const hojeBr = new Date(Date.now() - 3 * 60 * 60 * 1000)
     const daily = Array.from({ length: DIAS }, (_, idx) => {
@@ -424,6 +449,7 @@ export class AdminController {
       return {
         day,
         revenueCents: dRevenue.get(day) ?? 0,
+        cardRevenueCents: dCard.get(day) ?? 0,
         newCustomers: dNew.get(day) ?? 0,
         renewals: dRenewal.get(day) ?? 0,
         churned: dChurn.get(day) ?? 0,
@@ -435,7 +461,7 @@ export class AdminController {
     const newLast12mo = monthly.reduce((s, r) => s + r.newCustomers, 0)
     const churnedLast12mo = monthly.reduce((s, r) => s + r.churned, 0)
     const activeSubscribers = Number(active_subscribers || 0)
-    const mrrCents = Number(revenue_30d || 0)
+    const mrrCents = Number(revenue_30d || 0) + cartao30d
     const arpuCents = activeSubscribers > 0 ? Math.round(mrrCents / activeSubscribers) : 0
 
     // Churn/retenção: churned / base exposta ao churn no período (ativos agora + churned)
@@ -468,7 +494,7 @@ export class AdminController {
       generatedAt: new Date().toISOString(),
       summary: {
         activeSubscribers,
-        payingCustomersAllTime: Number(paying_customers || 0),
+        payingCustomersAllTime: Number(paying_customers || 0) + clientesCartao,
         newLast12mo,
         churnedLast12mo,
         revenueLast12moCents,
@@ -535,11 +561,19 @@ export class AdminController {
         AND paid_at >= ${inicioMes} AND paid_at < ${fimDia}
     `
 
+    // Cartão recorrente (Stripe) fica fora de `orders`: soma as faturas pagas.
+    const [prod] = await this.sql`SELECT name FROM products WHERE id = ${productId}`
+    const cartao = await this.faturasCartao(String(prod?.name ?? '')).catch(() => [] as PagamentoPorMetodo[])
+    const ini = Date.parse(inicioDia), fim = Date.parse(fimDia), iniMes = Date.parse(inicioMes)
+    const noDia = cartao.filter((c) => c.pagoEm.getTime() >= ini && c.pagoEm.getTime() < fim)
+    const noMes = cartao.filter((c) => c.pagoEm.getTime() >= iniMes && c.pagoEm.getTime() < fim)
+
     return {
       date,
-      newSubscribers: Number(new_subscribers || 0),
-      revenueTodayCents: Number(revenue_today || 0),
-      revenueMonthToDateCents: Number(revenue_mtd || 0),
+      newSubscribers: Number(new_subscribers || 0) + noDia.filter((c) => !c.renovacao).length,
+      revenueTodayCents: Number(revenue_today || 0) + noDia.reduce((t, c) => t + c.valorCents, 0),
+      revenueMonthToDateCents: Number(revenue_mtd || 0) + noMes.reduce((t, c) => t + c.valorCents, 0),
+      cardRevenueTodayCents: noDia.reduce((t, c) => t + c.valorCents, 0),
     }
   }
 
